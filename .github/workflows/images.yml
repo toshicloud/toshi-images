@@ -4,12 +4,14 @@ name: images
 # under KVM on a GitHub-hosted runner, boots the built image once over each
 # network mode the host agent uses, and checks that a build whose guest
 # provisioning breaks stops fast. QEMU runs with accel=kvm and no TCG
-# fallback, so a runner without usable KVM fails.
+# fallback, so a runner without usable KVM fails. On a release tag the
+# publish job pushes the image that passed the boot proof to GHCR.
 
 on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
   # Weekly, so that a change outside this repository (an apt mirror, a
   # toolset's download) shows before the next pull request.
@@ -61,6 +63,9 @@ jobs:
   ubuntu-24-04:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      image-sha256: ${{ steps.build.outputs.sha256 }}
+      guest-version: ${{ steps.build.outputs.guest-version }}
     steps:
       - name: Give the runner user /dev/kvm
         run: |
@@ -99,9 +104,14 @@ jobs:
           key: ubuntu-24.04-${{ hashFiles('ubuntu-24.04/versions.env', 'toolsets/versions.env') }}
 
       - name: Build the image
+        id: build
         run: |
           set -o pipefail
           OUT_DIR="$RUNNER_TEMP/images" ubuntu-24.04/build.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+          {
+            echo "sha256=$(sed -n 's/^sha256: //p' "$RUNNER_TEMP/build.log")"
+            echo "guest-version=$(sed -n 's/^toshi-guest version: //p' "$RUNNER_TEMP/build.log" | tail -n 1)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Toolset versions
         run: grep -a '^TOOLSET ' "$RUNNER_TEMP/images/work/serial.log" | tr -d '\r'
@@ -170,6 +180,76 @@ jobs:
           {
             grep -h '^boot proof (' "$RUNNER_TEMP/proof-user.log" "$RUNNER_TEMP/proof-passt.log"
             grep -E '^(sha256|toshi-guest version|build time):' "$RUNNER_TEMP/build.log"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Pushes the image that passed the boot proof, from the ubuntu-24-04 job's
+  # artifact, with the run's own token, and pulls it back by its digest.
+  # It runs no code of the image's build.
+  publish:
+    needs: ubuntu-24-04
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # The run's own token pushes the image; no token is stored.
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.9.14
+          install_args: --locked aqua:oras-project/oras
+          cache: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ubuntu-24.04-qcow2
+          path: ${{ runner.temp }}/image
+
+      # The login goes to a registry config of this step's own, removed on
+      # every exit.
+      - name: Push, pull back and compare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+          WANT: ${{ needs.ubuntu-24-04.outputs.image-sha256 }}
+          GUEST_VERSION: ${{ needs.ubuntu-24-04.outputs.guest-version }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/image"
+          if [[ ! $WANT =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::the ubuntu-24-04 job gave no image SHA-256: '${WANT}'"
+            exit 1
+          fi
+          echo "${WANT}  ubuntu-24.04.qcow2" | sha256sum -c -
+          ref="ghcr.io/${GITHUB_REPOSITORY}/ubuntu-24.04"
+          registry_config=$(mktemp -p "$RUNNER_TEMP")
+          trap 'rm -f "$registry_config"' EXIT
+          printf '%s\n' "$GITHUB_TOKEN" | oras login ghcr.io --registry-config "$registry_config" \
+            -u "$GITHUB_ACTOR" --password-stdin
+          digest=$(oras push "${ref}:${VERSION}" \
+            --registry-config "$registry_config" \
+            --artifact-type application/vnd.toshicloud.toshi-image.v1 \
+            --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.version=${VERSION}" \
+            --annotation "org.opencontainers.image.description=Ubuntu 24.04 runner image, toshi-guest ${GUEST_VERSION}" \
+            --format 'go-template={{.digest}}' \
+            ubuntu-24.04.qcow2:application/octet-stream)
+          digest=$(printf '%s' "$digest" | tr -d '[:space:]')
+          if [[ ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::oras push printed no manifest digest: '${digest}'"
+            exit 1
+          fi
+          oras pull --no-tty --registry-config "$registry_config" -o "$RUNNER_TEMP/pulled" "${ref}@${digest}"
+          echo "${WANT}  $RUNNER_TEMP/pulled/ubuntu-24.04.qcow2" | sha256sum -c -
+          {
+            echo "ubuntu-24.04 ${VERSION}: ${ref}@${digest}"
+            echo "ubuntu-24.04.qcow2 sha256 ${WANT}, toshi-guest ${GUEST_VERSION}"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
   build-fails-fast:

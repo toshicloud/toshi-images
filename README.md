@@ -81,6 +81,22 @@ and writes `<sha256>  <name>.qcow2` into `<dir>/SHA256SUMS`. It refuses to
 replace an installed image, because the agent's VMs and snapshots are built
 on it, so a new build gets a new name.
 
+## Published images
+
+On a release tag (`v*`) the `images` workflow pushes the Ubuntu image that
+passed its boot proof in that run to
+`ghcr.io/toshicloud/toshi-images/ubuntu-24.04`, tagged with the release, as
+an OCI artefact that holds `ubuntu-24.04.qcow2`. The job summary gives the
+reference at its digest and the qcow2's SHA-256. Pull it by digest with
+oras, which checks the content against the digest:
+
+```sh
+oras pull -o <dir> ghcr.io/toshicloud/toshi-images/ubuntu-24.04@sha256:<digest>
+./install.sh <dir>/ubuntu-24.04.qcow2 --image-dir <image_dir>
+```
+
+The Windows image is not published.
+
 ## CI
 
 The `images` workflow runs on GitHub-hosted `ubuntu-24.04` runners for
@@ -100,6 +116,9 @@ every pull request, every push to `main`, once a week and by hand:
   exits early, a cloud-init stage fails, a toolset download fails) and
   checks that `build.sh` stops within a minute of the failure in each
   case, instead of waiting for its build timeout.
+
+On a release tag, `publish` pushes the image from `ubuntu-24-04` (see
+[Published images](#published-images)).
 
 The `container` workflow builds the container image and checks it with a
 plain `docker run`; on a release tag it publishes the image once the
