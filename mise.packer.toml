@@ -1,0 +1,5 @@
+# Packer, for the Windows template's validation only. mise reads this file
+# when MISE_ENV=packer and takes each download from mise.packer.lock; after
+# a change here, refresh it with `MISE_ENV=packer mise lock`.
+[tools]
+packer = "1.16.1"

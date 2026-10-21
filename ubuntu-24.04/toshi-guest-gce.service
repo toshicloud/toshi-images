@@ -1,0 +1,22 @@
+[Unit]
+Description=Toshi runner from GCE instance metadata
+# Only a GCE instance of a cloud host; in a Toshi VM toshi-guest.service
+# talks to the host over the serial port instead.
+ConditionVirtualization=google
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+# Root: it blocks the metadata server for other users and arms the
+# shutdown. The runner runs as runner.
+User=root
+EnvironmentFile=/etc/environment
+WorkingDirectory=/opt/actions-runner
+ExecStart=/usr/local/bin/toshi-guest userdata --source gce
+# The runner is read once: no restart.
+Restart=no
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

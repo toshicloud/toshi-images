@@ -1,0 +1,25 @@
+<powershell>
+# User data of the temporary build instance only (windows-2025.pkr.hcl), as
+# a template: Packer writes the certificate and its password into the two
+# quoted strings below. It opens WinRM over HTTPS on 5986 with the
+# certificate build-windows-2025.sh made for this build, which is the one
+# Packer accepts; the last build step (provision.ps1 -Step seal) removes
+# everything this script adds before the image is taken. Instances of the
+# finished AMI get the cloud pool's user data.
+$ErrorActionPreference = 'Stop'
+New-Item -ItemType Directory -Force -Path C:\toshi | Out-Null
+Set-Service -Name WinRM -StartupType Automatic
+Start-Service -Name WinRM
+$file = 'C:\toshi\packer-winrm.pfx'
+[IO.File]::WriteAllBytes($file, [Convert]::FromBase64String('${pfx}'))
+$cert = Import-PfxCertificate -FilePath $file -CertStoreLocation Cert:\LocalMachine\My `
+    -Password (ConvertTo-SecureString -String '${password}' -AsPlainText -Force)
+Remove-Item -LiteralPath $file -Force
+Set-Content -LiteralPath C:\toshi\packer-winrm.thumbprint -Value $cert.Thumbprint -Encoding Ascii
+New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * `
+    -CertificateThumbPrint $cert.Thumbprint -Force | Out-Null
+Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
+New-NetFirewallRule -Name 'toshi-packer-winrm' -DisplayName 'Toshi image build WinRM (HTTPS)' `
+    -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow | Out-Null
+Restart-Service -Name WinRM
+</powershell>

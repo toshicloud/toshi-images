@@ -1,0 +1,25 @@
+[Unit]
+Description=Toshi guest helper
+Wants=dev-virtio\x2dports-toshi.guest.device
+After=dev-virtio\x2dports-toshi.guest.device
+StartLimitIntervalSec=0
+# On EC2, toshi-guest-userdata.service runs the runner instead;
+# on GCE, toshi-guest-gce.service.
+ConditionVirtualization=!amazon
+ConditionVirtualization=!google
+
+[Service]
+User=runner
+Group=runner
+AmbientCapabilities=CAP_SYS_TIME
+WorkingDirectory=/opt/actions-runner
+ExecStart=/usr/local/bin/toshi-guest run --transport serial:/dev/virtio-ports/toshi.guest
+Restart=on-failure
+# The job's processes run in this unit: when the guest kernel's OOM killer
+# kills one, the step fails and the runner reports it, rather than systemd
+# stopping the runner with it.
+OOMPolicy=continue
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

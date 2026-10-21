@@ -1,0 +1,22 @@
+#!/bin/bash
+# The image's entrypoint: start dockerd inside the container, as the
+# VM's docker.socket does, then run the command the container was given.
+# Under sysbox-runc the inner dockerd is root only in the container's
+# user namespace. Docker keeps its data on /cache/docker,
+# under what the provider mounts on /cache. The data root is a flag, not
+# a line in /etc/docker/daemon.json: Sysbox mounts a volume of its own
+# over the data root it reads there (/var/lib/docker when it finds
+# none), and that volume would hide the cache's copy of Docker's data.
+set -uo pipefail
+dockerd --data-root /cache/docker >/var/log/dockerd.log 2>&1 &
+for _ in $(seq 1 60); do
+	docker info >/dev/null 2>&1 && break
+	sleep 1
+done
+if ! docker info >/dev/null 2>&1; then
+	echo "toshi-container-init: dockerd did not start; its last lines:" >&2
+	tail -n 5 /var/log/dockerd.log >&2
+	exit 1
+fi
+chgrp docker /var/run/docker.sock
+exec "$@"

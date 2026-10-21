@@ -1,0 +1,50 @@
+# Checksums computed 2026-10-08 (date -u) by us; Microsoft publishes none for the
+# evaluation media, so a media refresh behind the same link fails the check.
+# The CDN file name behind https://go.microsoft.com/fwlink/?linkid=2345730&clcid=0x409&culture=en-us&country=us
+# is 26100.32230.260111-0550.lt_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso.
+# The build activates this evaluation over the internet. The activation carries
+# the evaluation's own clock: 180 days from the build's install, shared by every
+# VM started from that image, so a new media refresh does not extend an old image.
+7b052573ba7894c9924e3e87ba732ccd354d18cb75a883efa9b900ea125bfd51  windows-server-2025-eval-26100.32230.iso
+# virtio-win 0.1.302.
+303f7ae40dad495d6ae474fdc571df58958a4dbc5c37a522d80f9a203867949d  virtio-win-0.1.302.iso
+# actions-runner win-x64 2.338.0; matches the SHA in the v2.338.0 release notes.
+f48e0750a21812bca5f82de5f7f5aeae71abee647fab5a582f1742d07eba455f  actions-runner-win-x64-2.338.0.zip
+# PowerShell 7.6.6 win-x64 MSI; GitHub release asset digest.
+958838ff55091e1c8705d89efed0cc7e8245a3a6ef6c0ccfae20015227108ad8  powershell-7.6.6-win-x64.msi
+# Git for Windows 2.56.0.2; GitHub release asset digest.
+52188f917b378f00c70ec136bcf090005f30d44fbc4eba0bce759cc6592d60f6  Git-2.56.0.2-64-bit.exe
+# rustup-init 1.29.1 x86_64-pc-windows-msvc; static.rust-lang.org .sha256 sidecar.
+6f4bef66261261fcb43131be8720bab817d403a09edec7455c371974b90bdb7e  rustup-init-1.29.1-x86_64-pc-windows-msvc.exe
+# VS 2022 Build Tools 17.14.41 bootstrapper; hash embedded in Microsoft download URL.
+37bb0fb429d163ecebd272a865d11a37b906d152bef960da2ddb29c2e2fd6eeb  vs_buildtools-17.14.41.exe
+# 7-Zip 26.04 x64 MSI; GitHub release asset digest.
+0b01334a418654293513449f61d6bfc99e5196ca371e3c3dc961eda57cd535c6  7z2604-x64.msi
+# .NET SDK 8.0.425 win-x64; local sha256 (vendor publishes SHA512 only).
+48c31649ed0c37a161704e68fc9f5f67be9eb01edbd8f92b54b4c2e374ef6dfb  dotnet-sdk-8.0.425-win-x64.exe
+# WiX 4.0.6 nupkg; local sha256 (NuGet catalog publishes SHA512 only).
+a94dd42ae1fb56b32da180e2173ceda4f0d10b4c8871c5ee59ecb502131a1eb6  wix.4.0.6.nupkg
+# Python 3.12.10 amd64 installer, the last 3.12 release with Windows binaries
+# (GitHub's windows-2025 image has the same); digest in python.org's .sigstore bundle.
+67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb  python-3.12.10-amd64.exe
+# Node.js 24.21.0 win-x64 zip; nodejs.org SHASUMS256.txt.
+158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541  node-v24.21.0-win-x64.zip
+# Go 1.27.1 windows-amd64 zip; go.dev/dl.
+a3911b5e0e1b1053f25ed0675f4c1c6aad1e2bfcf253df2b9be4caabd2edd95d  go1.27.1.windows-amd64.zip
+# .NET SDK 9.0.318 win-x64; local sha256 (vendor publishes SHA512 only; it matched).
+fe7e5608e8165b179017cb1b709f266dc84d66a5d8ae187cf852ddaa3b96bc4c  dotnet-sdk-9.0.318-win-x64.exe
+# Temurin JDK 17.0.20.1+1 and 21.0.12.1+1 windows x64 zips; Adoptium .sha256.txt.
+e53a79c3c3d86865bd7e787903884331068e71321714ffd44f145785affc7cb0  OpenJDK17U-jdk_x64_windows_hotspot_17.0.20.1_1.zip
+f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e  OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip
+# CMake 3.31.6 windows-x86_64 MSI; Kitware cmake-3.31.6-SHA-256.txt.
+4cc39d59426cbbeb33d0daff1350e39b0585a90e3c9883dbba70816b8d282811  cmake-3.31.6-windows-x86_64.msi
+# Ninja 1.13.2 ninja-win.zip; GitHub release asset digest.
+07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65  ninja-1.13.2-win.zip
+# GitHub CLI 2.102.0 windows amd64 MSI; gh_2.102.0_checksums.txt.
+7944b579d76359e5b859a263bf63583e271ae3fbd427ae46e133c1f348b46371  gh_2.102.0_windows_amd64.msi
+# yq 4.54.1 yq_windows_amd64.exe; GitHub release asset digest.
+b645f47ebb3a0d2fbab52998550bbd0a1706f23b5ca5f5b48e638c580bb70928  yq-4.54.1-windows-amd64.exe
+# jq 1.8.2 jq-windows-amd64.exe; jq's sha256sum.txt.
+a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627  jq-1.8.2-windows-amd64.exe
+# nuget.exe 7.9.0; local sha256 (NuGet publishes none; the file is Authenticode-signed).
+992d70cac5b06c38efec91806caba64cdcc07e6d963a0959dbbbaf264d33b800  nuget-7.9.0.exe

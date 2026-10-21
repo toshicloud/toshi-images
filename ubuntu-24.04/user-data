@@ -1,0 +1,160 @@
+#cloud-config
+users:
+  - name: runner
+    lock_passwd: true
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+
+write_files:
+  - path: /usr/local/sbin/toshi-provision
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      trap 'echo "TOSHI-IMAGE-BUILD: FAILED in ${0##*/} at line ${LINENO} (exit $?): ${RETRY_FAILED:-$BASH_COMMAND}" > /dev/ttyS0; systemctl poweroff --no-block' ERR
+      mkdir -p /mnt/seed
+      mount -o ro /dev/disk/by-label/cidata /mnt/seed
+      # The helpers for a command that downloads: three tries, each with a
+      # time limit (toolsets/lib.sh).
+      . /mnt/seed/toolsets/lib.sh
+      # Without --error-on=any apt-get update exits 0 when a mirror did not answer.
+      DEBIAN_FRONTEND=noninteractive apt_get update --error-on=any
+      # snapd, and udisks2 when it is still starting, hold up a shutdown on
+      # their stop jobs. A runner needs no snap and no desktop disk or
+      # modem manager; lxd-installer only fetches the LXD snap, fwupd needs udisks2.
+      timeout 300 snap wait system seed.loaded || true
+      DEBIAN_FRONTEND=noninteractive apt-get purge -y snapd lxd-installer udisks2 fwupd modemmanager
+      apt-mark hold snapd
+      rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd /root/snap
+      DEBIAN_FRONTEND=noninteractive apt_install --no-install-recommends git curl jq build-essential unzip ca-certificates zip pkg-config clang python3-dev openssh-server polkitd
+      groupadd -f docker
+      usermod -aG docker runner
+      # /dev/kvm is root:kvm 0660. It exists only when the size has nested
+      # KVM; the group lets the runner open it without sudo.
+      groupadd -f -r kvm
+      usermod -aG kvm runner
+      # The Android emulator loads libX11-xcb even with -no-window.
+      DEBIAN_FRONTEND=noninteractive apt_install --no-install-recommends libx11-xcb1
+      # A filler builds this image in a VM with nested KVM, so the
+      # image carries what build.sh runs.
+      DEBIAN_FRONTEND=noninteractive apt_install --no-install-recommends qemu-system-x86 qemu-utils genisoimage
+      # A nested-KVM job can boot VMs through the QEMU provider, whose
+      # default per-VM network is passt; without it on PATH the agent
+      # refuses to start. Noble's passt (0.0~git20240220) predates the
+      # 2024-11..2025-09 crash window the qemu preflight warns about, so the
+      # guest needs no backport, unlike the Debian-13 hosts.
+      DEBIAN_FRONTEND=noninteractive apt_install --no-install-recommends passt
+      install -m0755 /mnt/seed/toshi-guest /usr/local/bin/toshi-guest
+      install -m0644 /mnt/seed/toshi-guest.service /etc/systemd/system/toshi-guest.service
+      # On EC2 the runner comes from the instance's user data instead.
+      install -m0644 /mnt/seed/toshi-guest-userdata.service /etc/systemd/system/toshi-guest-userdata.service
+      # On GCE it comes from the instance metadata.
+      install -m0644 /mnt/seed/toshi-guest-gce.service /etc/systemd/system/toshi-guest-gce.service
+      mkdir -p /opt/actions-runner
+      tar xzf /mnt/seed/actions-runner-linux-x64.tar.gz -C /opt/actions-runner
+      chown -R runner:runner /opt/actions-runner
+      bounded /opt/actions-runner/bin/installdependencies.sh
+      mkdir -p /home/runner/_work
+      chown runner:runner /home/runner/_work
+      # The tenant cache disk, made and mounted by the runner user.
+      mkdir -p /cache
+      echo '/dev/disk/by-id/virtio-toshi-cache /cache ext4 noauto,nofail,user,exec,noatime,discard 0 0' >> /etc/fstab
+      # A job's state volume, attached from boot, made and mounted
+      # by the runner user like the cache disk.
+      mkdir -p /volume
+      echo '/dev/disk/by-id/virtio-toshi-volume /volume ext4 noauto,nofail,user,exec,noatime,discard 0 0' >> /etc/fstab
+      # A filler's host share, a 9p export the runner user mounts.
+      mkdir -p /mnt/toshi-share
+      echo 'toshi-share /mnt/toshi-share 9p trans=virtio,version=9p2000.L,msize=524288,noauto,nofail,user,exec 0 0' >> /etc/fstab
+      set -a
+      test -f /mnt/seed/toolsets/versions.env
+      . /mnt/seed/toolsets/versions.env
+      set +a
+      # The first toolset that fails ends the build: run_toolset prints its
+      # `TOOLSET <name> <version> failed:` line, then the trap above prints
+      # the FAILED marker and powers the guest off. The remaining toolsets do
+      # not run: an image without one toolset is not used, and mise links the
+      # Go and Node that earlier toolsets installed.
+      for t in $TOOLSETS; do run_toolset "$t" 2>&1 | tee /dev/ttyS0; done
+      mkdir -p /etc/systemd/system/toshi-guest.service.d
+      {
+        echo '[Service]'
+        echo 'EnvironmentFile=/etc/environment'
+      } > /etc/systemd/system/toshi-guest.service.d/environment.conf
+      printf '[global]\nbreak-system-packages = true\n' > /etc/pip.conf
+      runuser -u runner -- env -i HOME=/home/runner bash --noprofile --norc -c 'set -a; . /etc/environment; set +a; for c in qemu-system-x86_64 qemu-img genisoimage passt python3 pip3 node npm npx corepack go rustc cargo dotnet docker mise pnpm task golangci-lint buf goreleaser protoc-gen-go protoc-gen-connect-go java javac jar cmake clang pkg-config git-lfs yq gh zip unzip curl jq make gcc; do command -v "$c" >/dev/null || { echo "missing $c"; exit 1; }; done; docker buildx version >/dev/null && docker compose version >/dev/null && docker info >/dev/null && echo "TOOLSET env ok"' | tee /dev/ttyS0
+      # Docker keeps its data, BuildKit's cache with it, on the tenant
+      # cache disk. dockerd no longer starts at boot: the socket starts it at
+      # the first docker command, after toshi-guest has mounted the disk, and
+      # toshi-guest stops it (polkit rule below) before the unmount.
+      runuser -u runner -- systemctl stop docker.socket docker.service
+      rm -rf /var/lib/docker
+      mkdir -p /etc/docker
+      # BuildKit's garbage collection stays off: toshi-guest trims Docker's
+      # data at job end, sized from the cache disk (Docker 28.0 takes only
+      # absolute sizes, and each plan's disk differs).
+      echo '{"data-root": "/cache/docker"}' > /etc/docker/daemon.json
+      systemctl disable docker.service
+      systemctl enable docker.socket
+      systemctl daemon-reload
+      systemctl enable toshi-guest.service toshi-guest-userdata.service toshi-guest-gce.service
+      DEBIAN_FRONTEND=noninteractive apt-get purge -y unattended-upgrades
+      systemctl mask apt-daily.timer apt-daily-upgrade.timer systemd-networkd-wait-online.service
+      # toshi-guest starts its own sshd, as the runner user, only for a
+      # failed job's debug session; the system one never listens.
+      systemctl disable ssh.service ssh.socket
+      systemctl mask ssh.service ssh.socket
+      umount /mnt/seed
+      echo "TOSHI-DF $(df -B1 --output=size,used,avail / | tail -1)" > /dev/ttyS0
+      for d in /usr/lib/jvm /usr/libexec/docker /var/lib/docker /home/runner/.rustup /usr/local /usr/share/dotnet /usr/local/share/mise; do
+        [ -e "$d" ] || continue
+        echo "TOSHI-DU $d $(du -sb "$d" 2>/dev/null | awk '{print $1}')" > /dev/ttyS0
+      done
+      systemd-run --no-block --unit=toshi-finalize --property=After=cloud-final.service /usr/local/sbin/toshi-finalize
+  - path: /usr/local/sbin/toshi-finalize
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      trap 'echo "TOSHI-IMAGE-BUILD: FAILED in ${0##*/} at line ${LINENO} (exit $?): ${BASH_COMMAND}" > /dev/ttyS0; systemctl poweroff --no-block' ERR
+      rm -f /etc/sudoers.d/90-cloud-init-users
+      apt-get clean
+      rm -rf /var/lib/apt/lists/*
+      rm -f /etc/ssh/ssh_host_*
+      cloud-init clean --logs --machine-id
+      rm -f /var/lib/dbus/machine-id
+      journalctl --rotate
+      journalctl --vacuum-time=1s
+      find /var/log -type f -exec truncate -s 0 {} +
+      rm -rf /tmp/* /var/tmp/*
+      sync
+      fstrim -av || true
+      echo "TOSHI-IMAGE-BUILD: DONE" > /dev/ttyS0
+      systemctl poweroff
+  - path: /etc/polkit-1/rules.d/50-toshi-docker.rules
+    permissions: "0644"
+    content: |
+      // toshi-guest runs as runner and stops Docker before it unmounts
+      // the cache disk. runner is in the docker group, so this grants nothing new.
+      polkit.addRule(function(action, subject) {
+        if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == "runner") {
+          var unit = action.lookup("unit");
+          if ((unit == "docker.service" || unit == "docker.socket") &&
+              (action.lookup("verb") == "stop" || action.lookup("verb") == "start")) {
+            return polkit.Result.YES;
+          }
+        }
+      });
+  - path: /etc/udev/rules.d/90-toshi-guest.rules
+    permissions: "0644"
+    content: |
+      SUBSYSTEM=="virtio-ports", ATTR{name}=="toshi.guest", OWNER="runner", GROUP="runner", MODE="0600", TAG+="systemd"
+      SUBSYSTEM=="block", KERNEL=="vd*[!0-9]", ATTRS{serial}=="toshi-cache", OWNER="runner", GROUP="runner", MODE="0600"
+      SUBSYSTEM=="block", KERNEL=="vd*[!0-9]", ATTRS{serial}=="toshi-volume", OWNER="runner", GROUP="runner", MODE="0600"
+  - path: /etc/cloud/cloud.cfg.d/99-toshi.cfg
+    permissions: "0644"
+    content: |
+      datasource_list: [ NoCloud, None ]
+
+runcmd:
+  - /usr/local/sbin/toshi-provision
