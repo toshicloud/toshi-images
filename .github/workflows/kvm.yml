@@ -1,0 +1,120 @@
+name: kvm
+
+# Boots the Ubuntu cloud image under QEMU with KVM on a GitHub-hosted runner
+# and fails unless the guest reaches its cloud-init marker. QEMU runs with
+# accel=kvm and no TCG fallback, so a runner without usable KVM fails.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kvm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UBUNTU_SERIAL: "20260926"
+      UBUNTU_IMAGE_URL: https://cloud-images.ubuntu.com/releases/noble/release-20260926/ubuntu-24.04-server-cloudimg-amd64.img
+      UBUNTU_IMAGE_SHA256: 6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2
+      BOOT_TIMEOUT: "600"
+    steps:
+      - name: Give the runner user /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+          if [ ! -w /dev/kvm ]; then
+            echo "::error::/dev/kvm is not writable on this runner"
+            exit 1
+          fi
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils genisoimage
+
+      - name: Fetch the cloud image
+        run: |
+          curl -fsSL --retry 3 -o base.img "$UBUNTU_IMAGE_URL"
+          echo "$UBUNTU_IMAGE_SHA256  base.img" | sha256sum -c -
+          qemu-img create -q -f qcow2 -b base.img -F qcow2 disk.qcow2 10G
+
+      - name: Write the seed
+        run: |
+          mkdir seed
+          printf 'instance-id: kvm-probe\nlocal-hostname: kvm-probe\n' > seed/meta-data
+          cat > seed/user-data <<'USERDATA'
+          #cloud-config
+          runcmd:
+            - 'echo "KVM-PROBE: BOOTED $(uname -r)" > /dev/ttyS0'
+            - systemctl poweroff
+          USERDATA
+          genisoimage -quiet -output seed.iso -volid cidata -joliet -rock seed/user-data seed/meta-data
+
+      - name: Boot under KVM
+        id: boot
+        run: |
+          start=$(date +%s)
+          qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 2 -m 2048 \
+            -display none -monitor none -serial file:serial.log \
+            -drive file=disk.qcow2,if=virtio,format=qcow2 \
+            -drive file=seed.iso,if=virtio,format=raw,readonly=on \
+            -netdev user,id=net0 -device virtio-net-pci,netdev=net0 &
+          qemu=$!
+          booted=""
+          while kill -0 "$qemu" 2>/dev/null; do
+            if grep -aq '^KVM-PROBE: BOOTED' serial.log 2>/dev/null; then
+              booted=$(( $(date +%s) - start ))
+              break
+            fi
+            if grep -aq 'Failed to start .*cloud-' serial.log 2>/dev/null; then
+              kill "$qemu"
+              echo "::error::a cloud-init stage failed; see the serial log"
+              exit 1
+            fi
+            if [ $(( $(date +%s) - start )) -ge "$BOOT_TIMEOUT" ]; then
+              kill "$qemu"
+              echo "::error::no boot marker within $BOOT_TIMEOUT s"
+              exit 1
+            fi
+            sleep 1
+          done
+          # The guest powers off right after the marker, so QEMU can exit
+          # between two reads: read the log once more after it has gone.
+          if [ -z "$booted" ] && grep -aq '^KVM-PROBE: BOOTED' serial.log 2>/dev/null; then
+            booted=$(( $(date +%s) - start ))
+          fi
+          if [ -z "$booted" ]; then
+            echo "::error::QEMU exited before the boot marker"
+            exit 1
+          fi
+          wait "$qemu" || true
+          echo "seconds=$booted" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          line="KVM probe: Ubuntu 24.04 ($UBUNTU_SERIAL) booted under accel=kvm to its cloud-init marker in ${{ steps.boot.outputs.seconds }} s"
+          echo "$line"
+          {
+            echo "$line"
+            echo
+            echo "Runner: $(nproc) CPUs, $(free -g | awk '/^Mem:/ {print $2}') GiB memory, $(df -BG --output=avail / | tail -1 | tr -d ' ') free on /"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the serial log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kvm-probe-serial
+          path: serial.log
+          if-no-files-found: ignore
+          retention-days: 7
