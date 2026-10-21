@@ -1,14 +1,14 @@
-# images
+# toshi-images
 
-Runner images as code: build definitions and install scripts for the
-Linux and Windows VM images and a Linux container image, reviewed and versioned like the rest of the
-code. There is no macOS image yet. Built images are never committed.
+Runner images as code for Toshi:
+build definitions and install scripts for the Linux and Windows VM images
+and a Linux container image, reviewed and versioned like code. There is no macOS image yet. Built images are never committed.
 
 | Directory | Image | Built with |
 |-----------|-------|------------|
 | [`ubuntu-24.04`](ubuntu-24.04/README.md) | `ubuntu-24.04.qcow2` for the QEMU provider | bash, cloud-init and QEMU |
 | [`windows-2025`](windows-2025/README.md) | `windows-2025.qcow2` for the QEMU provider | bash, an answer file and QEMU |
-| [`ubuntu-24.04-container`](ubuntu-24.04-container/README.md) | an OCI image for the container tier; `image-container` builds it, and on a release tag publishes it to the image reference the repository variable `CONTAINER_IMAGE` names, which stays unset until the operator of the repository sets it | Docker |
+| [`ubuntu-24.04-container`](ubuntu-24.04-container/README.md) | an OCI image for the container tier | Docker |
 
 The [`toolsets/`](toolsets/) directory holds shared Bash install scripts and
 `versions.env` pins for language toolchains (Python, Node, Go, Rust, .NET).
@@ -24,15 +24,7 @@ Each image directory holds:
 - the files the build copies into the guest;
 - a `README.md` that says what the build needs and how to run it.
 
-The `image-linux` workflow builds the Linux image and boots it with the QEMU
-provider.
-
-The `image-container` workflow builds the container image and checks it
-with a plain `docker run`; on a release tag it publishes the image once
-the repository variable `CONTAINER_IMAGE` is set, and adds the image's
-reference at its digest to the release. A dispatch can rehearse the
-publish against a registry on the job's loopback address. See
-[its README](ubuntu-24.04-container/README.md#the-workflow).
+The Ubuntu image's build is described in [its README](ubuntu-24.04/README.md).
 
 The Windows Server 2025 image is built from the evaluation media, unattended,
 on a Linux host with KVM rather than in hosted CI, because the install takes much
@@ -89,24 +81,42 @@ and writes `<sha256>  <name>.qcow2` into `<dir>/SHA256SUMS`. It refuses to
 replace an installed image, because the agent's VMs and snapshots are built
 on it, so a new build gets a new name.
 
-## Evidence from image-linux
+## CI
 
-The workflow's real-VM proof needs KVM. Each job checks for a writable
-`/dev/kvm` first, and never falls back to the much slower TCG emulation.
+The `images` workflow runs on GitHub-hosted `ubuntu-24.04` runners for
+every pull request, every push to `main`, once a week and by hand:
 
-Without KVM each job fails in that first step. It runs no build or test
-step, sets the job output `kvm=false`, and posts the error "no KVM on this
-runner, image proof skipped" (`ubuntu-24-04`) or "no KVM on this runner,
-fail-fast check skipped" (`build-fails-fast`), as an annotation and in the
-job summary. With KVM, the last step of each job adds "image proof ran on
-KVM" (or "fail-fast check ran on KVM") to the summary once every step has
-passed. Until 2026-10-18 `build-fails-fast` skipped its steps without KVM
-and ended green, with that message as a warning.
+- `lint` runs shellcheck over every script and validates the Windows
+  template with Packer. The Windows image itself is not built in CI.
+- `ubuntu-24-04` builds the Ubuntu image with the pinned guest helper,
+  then boots it twice with `ubuntu-24.04/boot-proof.sh`, once over
+  QEMU's user-mode networking and once over passt, the two network modes
+  the host agent uses. Each boot passes only if `toshi-guest.service` is
+  active, the helper reports the pinned version and an outbound HTTPS
+  request is answered. The job summary carries one line per boot, and
+  the built `ubuntu-24.04.qcow2` is kept as a workflow artifact for 7
+  days.
+- `build-fails-fast` breaks the guest's provisioning three ways (QEMU
+  exits early, a cloud-init stage fails, a toolset download fails) and
+  checks that `build.sh` stops within a minute of the failure in each
+  case, instead of waiting for its build timeout.
 
-A green `ubuntu-24-04` check therefore means that the image proof ran on
-KVM, and a green `build-fails-fast` check that the fail-fast check ran
-on KVM.
+The `kvm` workflow boots the stock Ubuntu cloud image under KVM, as a
+quick check that the hosted runner gives jobs a usable `/dev/kvm`.
 
-To check the no-KVM path, start the workflow by hand with the
-`simulate_no_kvm` input set to `true`: both jobs then fail with their
-message, and nothing re-runs them.
+Every job that boots a VM makes `/dev/kvm` writable first and fails if it
+cannot. QEMU runs with `accel=kvm` and never falls back to the much slower
+TCG emulation, so a green check means the VMs ran under KVM.
+
+To run the boot proof on a built image yourself, on a Linux host with KVM,
+QEMU, genisoimage and passt:
+
+```sh
+ubuntu-24.04/boot-proof.sh <image.qcow2> user
+ubuntu-24.04/boot-proof.sh <image.qcow2> passt
+```
+
+On Ubuntu 24.04, passt confined by its AppArmor profile gives the guest no
+address, and the passt boot fails to resolve the proof URL. The
+`ubuntu-24-04` job unloads the profile and allows unprivileged user
+namespaces before that boot.

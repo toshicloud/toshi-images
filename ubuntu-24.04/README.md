@@ -130,7 +130,7 @@ checks the seed's `go.tar.gz` against the same SHA256 and installs it, so
 the VM does not download Go: its line is `TOOLSET go <version> seed`, and
 build.sh fails without that line. Run without a seed tarball, `go.sh`
 downloads from go.dev as before and prints `download` instead. The other
-toolsets are downloaded in the VM. In the `image-linux` workflow the three
+toolsets are downloaded in the VM. In the `images` workflow the three
 cached inputs are kept between runs, under a key made from both
 `versions.env` files.
 
@@ -152,18 +152,17 @@ the whole log is `$OUT_DIR/work/serial.log`. When the guest's own provisioning f
 
 ## Try the image
 
-Boot it with the QEMU provider's real boot and handshake tests (see
-[`test/README.md`](../../test/README.md)):
+Boot it once over each network mode the host agent uses, and check its
+guest helper:
 
 ```sh
-TOSHI_QEMU_E2E=1 TOSHI_QEMU_IMAGE_DIR=$HOME/.cache/toshi-images/out \
-TOSHI_QEMU_IMAGE=ubuntu-24.04 \
-go test ./internal/provider/qemu -run 'TestRealBoot|TestRealGuestHandshake' -v
+ubuntu-24.04/boot-proof.sh $HOME/.cache/toshi-images/out/ubuntu-24.04.qcow2 user
+ubuntu-24.04/boot-proof.sh $HOME/.cache/toshi-images/out/ubuntu-24.04.qcow2 passt
 ```
 
 ## Update an input
 
-When the repository's `mise.toml` changes a CI tool, copy it to
+When Toshi's `mise.toml` changes a CI tool, copy it to
 `toolsets/ci/mise.toml` and refresh the lock file from that
 directory with `mise lock --platform linux-x64`. The lock pins each
 download's SHA256, and the build refuses a download that does not match.
@@ -171,4 +170,4 @@ download's SHA256, and the build refuses a download that does not match.
 Take the new serial's `ubuntu-24.04-server-cloudimg-amd64.img` line from
 that release's `SHA256SUMS`, or the runner tarball's SHA256 from its release
 page, and change the URL, version and checksum in `versions.env` together.
-The `image-linux` workflow proves the change on the pull request.
+The `images` workflow proves the change on the pull request.

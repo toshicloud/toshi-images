@@ -31,11 +31,11 @@ release (Node `SHASUMS256.txt`, Go download page, rustup archive, Microsoft
 release metadata for .NET, mise's `SHASUMS256.txt`). The toolsets added for
 GitHub's ubuntu-24.04 set take their checksums from Docker's `dists/noble`
 `Packages` index and the buildx, compose, gh, yq and git-lfs release checksum
-files, Kitware's `cmake-<v>-SHA-256.txt` and Temurin's `.sha256.txt`. The CI tools follow the
-repository's `mise.toml`: copy it to `ci/mise.toml` and run `mise lock
+files, Kitware's `cmake-<v>-SHA-256.txt` and Temurin's `.sha256.txt`. The CI tools follow
+Toshi's `mise.toml`: copy it to `ci/mise.toml` and run `mise lock
 --platform linux-x64` in `ci/`. Python has no exact pin: `PYTHON_SERIES` is the
 major.minor checked against the interpreter, and apt installs whatever the noble-updates
-packages currently are. The weekly `image-linux` workflow rebuilds the image and fails if
+packages currently are. The weekly `images` workflow rebuilds the image and fails if
 a pin is wrong or stale.
 
 ## Build contract
