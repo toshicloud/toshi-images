@@ -1,0 +1,400 @@
+name: images
+
+# Lints the scripts and the Windows template, builds the Ubuntu 24.04 image
+# under KVM on a GitHub-hosted runner, boots the built image once over each
+# network mode the host agent uses, and checks that a build whose guest
+# provisioning breaks stops fast. QEMU runs with accel=kvm and no TCG
+# fallback, so a runner without usable KVM fails.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Weekly, so that a change outside this repository (an apt mirror, a
+  # toolset's download) shows before the next pull request.
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels its older run; every other event's
+# run has a group of its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # mise.packer.toml adds Packer to the tools in mise.toml.
+      MISE_ENV: packer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Installs the pinned tools; mise checks every archive it fetches
+      # against mise.lock and mise.packer.lock.
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.9.14
+          install_args: --locked
+          cache: false
+
+      - name: shellcheck
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck
+
+      # The Windows template is validated only: the image is built by hand
+      # on a Linux host with KVM (windows-2025/README.md).
+      - name: Validate the Windows template
+        env:
+          CHECKPOINT_DISABLE: "1"
+        run: |
+          packer init aws/windows-2025.pkr.hcl
+          packer fmt -check -diff aws
+          packer validate -var region=eu-west-1 -var toshi_version=ci \
+            -var winrm_certificate_pfx=Y2k= -var winrm_certificate_password=ci \
+            aws/windows-2025.pkr.hcl
+
+  ubuntu-24-04:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Give the runner user /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+          if [ ! -w /dev/kvm ]; then
+            echo "::error::/dev/kvm is not writable on this runner"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # oras, which pulls the pinned guest helper.
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.9.14
+          install_args: --locked
+          cache: false
+
+      - name: Install QEMU, ISO tools and passt
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils genisoimage passt jq
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/toshi-images/ubuntu-24.04-server-cloudimg-amd64-*.img
+            ~/.cache/toshi-images/actions-runner-linux-x64-*.tar.gz
+            ~/.cache/toshi-images/go*.linux-amd64.tar.gz
+          # Both files pin a cached input: the toolsets' one pins Go.
+          key: ubuntu-24.04-${{ hashFiles('ubuntu-24.04/versions.env', 'toolsets/versions.env') }}
+
+      - name: Build the image
+        run: |
+          set -o pipefail
+          OUT_DIR="$RUNNER_TEMP/images" ubuntu-24.04/build.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Toolset versions
+        run: grep -a '^TOOLSET ' "$RUNNER_TEMP/images/work/serial.log" | tr -d '\r'
+
+      - name: Boot proof over user-mode networking
+        env:
+          KEEP_SERIAL_LOG: ${{ runner.temp }}/proof-user-serial.log
+        run: |
+          set -o pipefail
+          ubuntu-24.04/boot-proof.sh "$RUNNER_TEMP/images/ubuntu-24.04.qcow2" user | tee "$RUNNER_TEMP/proof-user.log"
+
+      # Confined by Ubuntu's AppArmor profile, passt gives the guest no DHCP
+      # lease on the hosted runner. Unconfined, it needs the unprivileged
+      # user namespace it sandboxes itself in, which Ubuntu restricts.
+      - name: Run passt without its AppArmor profile
+        run: |
+          sudo apparmor_parser -R /etc/apparmor.d/usr.bin.passt
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Boot proof over passt
+        env:
+          KEEP_SERIAL_LOG: ${{ runner.temp }}/proof-passt-serial.log
+        run: |
+          set -o pipefail
+          ubuntu-24.04/boot-proof.sh "$RUNNER_TEMP/images/ubuntu-24.04.qcow2" passt | tee "$RUNNER_TEMP/proof-passt.log"
+
+      - name: Record QEMU processes and kernel log
+        if: failure() || cancelled()
+        continue-on-error: true
+        run: |
+          {
+            echo "== ps -eo pid,stat,wchan:32,cmd (qemu)"
+            ps -eo pid,stat,wchan:32,cmd | awk 'NR == 1 || $4 ~ /qemu/'
+            echo "== dmesg | tail -n 200"
+            sudo -n dmesg | tail -n 200 || true
+          } > "$RUNNER_TEMP/failure-record.log" 2>&1
+
+      # Uploaded also when a step fails or the job is cancelled; an upload
+      # error must not fail the job.
+      - name: Upload build and serial logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ubuntu-24.04-logs
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/images/work/serial.log
+            ${{ runner.temp }}/proof-*.log
+            ${{ runner.temp }}/failure-record.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # The built image, kept seven days. qemu-img already compressed it.
+      - name: Upload the image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ubuntu-24.04-qcow2
+          path: ${{ runner.temp }}/images/ubuntu-24.04.qcow2
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Proof summary
+        run: |
+          {
+            grep -h '^boot proof (' "$RUNNER_TEMP/proof-user.log" "$RUNNER_TEMP/proof-passt.log"
+            grep -E '^(sha256|toshi-guest version|build time):' "$RUNNER_TEMP/build.log"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  build-fails-fast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Give the runner user /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+          if [ ! -w /dev/kvm ]; then
+            echo "::error::/dev/kvm is not writable on this runner"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install QEMU and ISO tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils genisoimage
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/toshi-images/ubuntu-24.04-server-cloudimg-amd64-*.img
+            ~/.cache/toshi-images/actions-runner-linux-x64-*.tar.gz
+            ~/.cache/toshi-images/go*.linux-amd64.tar.gz
+          key: ubuntu-24.04-${{ hashFiles('ubuntu-24.04/versions.env', 'toolsets/versions.env') }}
+
+      - name: Fail fast
+        run: |
+          # The job is about how fast build.sh stops, not whether it builds:
+          # each case breaks the guest's provisioning on purpose and must fail
+          # well before its own timeout (status 124), which is well before
+          # BUILD_TIMEOUT. toolset provisions the guest's apt packages first,
+          # so it takes longest.
+          # The QEMU processes, with the kernel function each waits in, and
+          # the kernel's last 200 lines: what a hung case leaves to read.
+          record_hang() {
+            echo "== ps -eo pid,stat,wchan:32,cmd (qemu)"
+            ps -eo pid,stat,wchan:32,cmd | awk 'NR == 1 || $4 ~ /qemu/'
+            echo "== dmesg | tail -n 200"
+            sudo -n dmesg | tail -n 200 || true
+          }
+          failed=0
+          for case in qemu-exit cloud-init toolset; do
+            case_timeout=180
+            if [ "$case" = toolset ]; then
+              case_timeout=360
+            fi
+            rm -rf "${RUNNER_TEMP:?}/$case"
+            mkdir -p "$RUNNER_TEMP/$case/tree"
+            git archive HEAD | tar -x -C "$RUNNER_TEMP/$case/tree"
+            if [ "$case" = toolset ]; then
+              # Provisioning runs unchanged up to the toolsets. The only
+              # toolset is then yq, with a URL on the guest's own loopback
+              # where nothing listens: each of the three tries is refused at
+              # once, whatever the network outside the guest does.
+              printf '%s\n' 'TOOLSETS="yq"' 'YQ_URL="http://127.0.0.1:9/yq"' \
+                >> "$RUNNER_TEMP/$case/tree/toolsets/versions.env"
+              # build.sh reports the toolset in one of two lines: the first
+              # when it reads the serial log after the guest's FAILED marker,
+              # the second when it reads between the TOOLSET line and the
+              # marker.
+              expect='^(guest reported|a toolset failed in the guest \(seen [0-9]+s after boot\):) TOOLSET yq [^ ]+ failed: exit 7: failed: yq from http://127\.0\.0\.1:9/yq \(curl exit 7\)'
+            else
+              if [ "$case" = qemu-exit ]; then
+                replacement='  - [systemctl, poweroff]'
+                expect='QEMU exited before TOSHI-IMAGE-BUILD: DONE'
+              else
+                replacement='  - [false]'
+                expect='cloud-init failed in the guest'
+              fi
+              user_data="$RUNNER_TEMP/$case/tree/ubuntu-24.04/user-data"
+              sed -i "s|^  - /usr/local/sbin/toshi-provision\$|$replacement|" "$user_data"
+              if ! grep -qxF "$replacement" "$user_data" \
+                || grep -qxF '  - /usr/local/sbin/toshi-provision' "$user_data"; then
+                echo "::error::could not break provisioning in $case user-data"
+                failed=1
+                continue
+              fi
+            fi
+            serial="$RUNNER_TEMP/$case/out/work/serial.log"
+            watcher=
+            if [ "$case" = toolset ]; then
+              # The host's clock when the first failed try and when the
+              # TOOLSET line reach the serial log, read once a second.
+              (
+                until grep -aqE 'retry: try 1/3 failed .*http://127\.0\.0\.1:9/yq' "$serial" 2> /dev/null; do sleep 1; done
+                date +%s > "$RUNNER_TEMP/$case/first-try"
+                until grep -aqE 'TOOLSET yq [^ ]+ failed:' "$serial" 2> /dev/null; do sleep 1; done
+                date +%s > "$RUNNER_TEMP/$case/toolset-line"
+              ) &
+              watcher=$!
+            fi
+            # 10 s before the timeout the recorder writes hang.log. A case
+            # that ends more than 10 s before its timeout stops the recorder
+            # before it writes.
+            (
+              trap 'kill "$sleeper" 2> /dev/null; exit 0' TERM
+              sleep "$((case_timeout - 10))" &
+              sleeper=$!
+              wait "$sleeper"
+              record_hang > "$RUNNER_TEMP/$case/hang.log" 2>&1
+            ) &
+            recorder=$!
+            start=$SECONDS
+            set +e
+            TOSHI_GUEST_BIN=/usr/bin/true OUT_DIR="$RUNNER_TEMP/$case/out" \
+              timeout --kill-after=10 "$case_timeout" "$RUNNER_TEMP/$case/tree/ubuntu-24.04/build.sh" \
+              > "$RUNNER_TEMP/$case.log" 2>&1
+            status=$?
+            set -e
+            end=$(date +%s)
+            elapsed=$((SECONDS - start))
+            echo "FAST-FAIL $case exit=$status step_seconds=$elapsed"
+            kill "$recorder" 2> /dev/null || true
+            wait "$recorder" 2> /dev/null || true
+            if [ -n "$watcher" ]; then
+              # build.sh can end within the second the watcher sleeps.
+              for _ in 1 2 3; do
+                if [ -s "$RUNNER_TEMP/$case/toolset-line" ]; then
+                  break
+                fi
+                sleep 1
+              done
+              kill "$watcher" 2> /dev/null || true
+              wait "$watcher" 2> /dev/null || true
+            fi
+            # 137: build.sh outlived the 10 s after its timeout's TERM.
+            if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+              echo "::error::$case: build.sh did not end within its ${case_timeout} s timeout (exit=$status); $case/hang.log in build-fails-fast-logs has the QEMU processes and kernel log"
+              failed=1
+              continue
+            fi
+            if [ "$status" -eq 0 ]; then
+              echo "::error::$case: build.sh exit=$status, expected a fast non-zero failure"
+              failed=1
+            fi
+            if ! grep -qaE "$expect" "$RUNNER_TEMP/$case.log"; then
+              echo "::error::$case: log has no line that matches '$expect'"
+              failed=1
+              continue
+            fi
+            reported=$(grep -aE "$expect" "$RUNNER_TEMP/$case.log" | head -n 1)
+            echo "$reported"
+            if [ "$case" = toolset ]; then
+              # tries_s is the time from the first failed try to the TOOLSET
+              # line: the 10 s and 30 s that retry waits between the tries,
+              # and the second and third tries.
+              # lag_s is the time from the TOOLSET line to build.sh's exit,
+              # plus 2 s for the watcher's second and the whole-second clock.
+              first=$(cat "$RUNNER_TEMP/$case/first-try" 2> /dev/null || true)
+              line=$(cat "$RUNNER_TEMP/$case/toolset-line" 2> /dev/null || true)
+              if [ -z "$first" ] || [ -z "$line" ]; then
+                echo "::error::$case: the serial log did not show the first failed try and the TOOLSET line"
+                failed=1
+                continue
+              fi
+              tries=$((line - first))
+              lag=$((end - line + 2))
+              echo "FAST-FAIL $case tries_s=$tries lag_s<=$lag"
+              if [ "$tries" -gt 50 ]; then
+                echo "::error::$case: $tries s from the first failed try to the TOOLSET line, over 50 s"
+                failed=1
+              fi
+              if [ "$lag" -gt 60 ]; then
+                echo "::error::$case: detection lag $lag s is over 60 s"
+                failed=1
+              fi
+              continue
+            fi
+            # The guest's kernel clock starts after QEMU does, so the time
+            # build.sh reports minus the last kernel timestamp before the
+            # failure (or before power-off) is an upper bound on the lag.
+            seen=$(printf '%s\n' "$reported" | sed -nE 's/.*seen ([0-9]+)s after boot.*/\1/p')
+            guest=$(tr -d '\r' < "$serial" \
+              | sed -E $'s/\e\\[[0-9;]*m//g' \
+              | awk -v stop="$([ "$case" = cloud-init ] && echo 'Failed to start cloud-')" '
+                  !done && match($0, /^\[ *[0-9]+\.[0-9]+\]/) { t = substr($0, RSTART + 1, RLENGTH - 2) + 0 }
+                  stop != "" && index($0, stop) { done = 1 }
+                  END { printf "%d", t }')
+            if [ -z "$seen" ]; then
+              echo "::error::$case: the reported line has no 'seen <n>s after boot'"
+              failed=1
+              continue
+            fi
+            lag=$((seen - guest))
+            echo "FAST-FAIL $case guest_event_s=$guest detected_s=$seen lag_s<=$lag"
+            if [ "$lag" -gt 60 ]; then
+              echo "::error::$case: detection lag $lag s is over 60 s"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Record QEMU processes and kernel log
+        if: failure() || cancelled()
+        continue-on-error: true
+        run: |
+          {
+            echo "== ps -eo pid,stat,wchan:32,cmd (qemu)"
+            ps -eo pid,stat,wchan:32,cmd | awk 'NR == 1 || $4 ~ /qemu/'
+            echo "== dmesg | tail -n 200"
+            sudo -n dmesg | tail -n 200 || true
+          } > "$RUNNER_TEMP/failure-record.log" 2>&1
+
+      - name: Upload fail-fast logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-fails-fast-logs
+          path: |
+            ${{ runner.temp }}/qemu-exit.log
+            ${{ runner.temp }}/cloud-init.log
+            ${{ runner.temp }}/toolset.log
+            ${{ runner.temp }}/*/out/work/serial.log
+            ${{ runner.temp }}/*/hang.log
+            ${{ runner.temp }}/failure-record.log
+          if-no-files-found: ignore
+          retention-days: 7
