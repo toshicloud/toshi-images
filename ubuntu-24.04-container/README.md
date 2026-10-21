@@ -80,3 +80,41 @@ so the entrypoint and its dockerd do not start, and fails unless:
   are there, and every package the `Dockerfile` installs by name is
   installed, so `cloud-exclude.txt` left nothing out that the recipe
   needs.
+
+## The workflow
+
+[`container.yml`](../.github/workflows/container.yml) runs on a pull
+request or a push to main that changes the recipe, the toolsets or the
+runner's pins; on a dispatch; and on every release tag (`v*`). Its
+`build` job builds the image with `build.sh`, checks that the revision
+label is the run's commit, runs the smoke test, saves the image as a
+zstd-compressed tarball (`docker save`, which `docker load` reads as it
+is) and uploads it as an artifact kept for 7 days. The tarball's SHA-256
+and sizes go to the job summary.
+
+A broken pin stops the build at the pin: `build.sh` refuses a
+`Dockerfile` whose base has no digest before anything is fetched, and a
+download whose SHA256 differs from its pin fails at once, with no retry.
+A dispatch with `break_pin` set to `base-digest` or `toolset-sha256`
+breaks one on purpose to show it.
+
+The `publish` job runs only on a release tag, and only when the
+repository variable `CONTAINER_IMAGE` is set to an image reference with
+its registry host and without a tag or digest. It takes the tarball from
+`build` through the cache, logs in to that registry host with the run's
+own token (`packages: write`; no token is stored) and runs
+[`publish.sh`](publish.sh). The script checks the tarball's SHA-256,
+loads it, pushes it with the release's version and with `ubuntu-24.04`
+as tags, pulls it back at the pushed digest and compares it with the
+loaded image, and writes `<reference>@sha256:<digest>` to the job
+summary: the reference a container-tier host pulls.
+Otherwise `build` writes why publishing was skipped: `publish skipped:
+not a release tag` on any run but a release tag, and `publish skipped:
+CONTAINER_IMAGE not set` while the variable is unset.
+
+A dispatch with `rehearse_publish` runs `publish.sh` on any ref against
+a registry that the `publish-rehearsal` job starts on its own loopback
+address, and uploads the digest file as an artifact; the script refuses
+any other registry in a rehearsal. The rehearsal proves the tarball
+check, the load, the tags, the push and the pull back by digest; only a
+release tag proves the login and the push to the real registry.

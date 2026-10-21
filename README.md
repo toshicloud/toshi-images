@@ -101,6 +101,11 @@ every pull request, every push to `main`, once a week and by hand:
   checks that `build.sh` stops within a minute of the failure in each
   case, instead of waiting for its build timeout.
 
+The `container` workflow builds the container image and checks it with a
+plain `docker run`; on a release tag it publishes the image once the
+repository variable `CONTAINER_IMAGE` is set. See
+[its README](ubuntu-24.04-container/README.md#the-workflow).
+
 The `kvm` workflow boots the stock Ubuntu cloud image under KVM, as a
 quick check that the hosted runner gives jobs a usable `/dev/kvm`.
 

@@ -1,0 +1,271 @@
+name: container
+
+# Builds the container tier's runner image (ubuntu-24.04-container/README.md),
+# checks it with a plain `docker run` and saves it as an OCI tarball. On a
+# release tag, and only when the repository variable CONTAINER_IMAGE names
+# an image reference with its registry host and without a tag or digest,
+# the publish job pushes it there. A dispatch with rehearse_publish runs
+# the publish job's script on any ref against a registry inside the job.
+on:
+  pull_request:
+    paths:
+      - ubuntu-24.04-container/**
+      - toolsets/**
+      - ubuntu-24.04/versions.env
+      - .github/workflows/container.yml
+  push:
+    branches: [main]
+    # GitHub ignores the paths filter for a tag: every release tag runs.
+    tags: ['v*']
+    paths:
+      - ubuntu-24.04-container/**
+      - toolsets/**
+      - ubuntu-24.04/versions.env
+      - .github/workflows/container.yml
+  workflow_dispatch:
+    inputs:
+      break_pin:
+        description: Break one pin on purpose, to prove that the build stops on it
+        type: choice
+        options: [none, base-digest, toolset-sha256]
+        default: none
+      rehearse_publish:
+        description: Run the publish steps against a registry inside the job; the image is not published
+        type: boolean
+        default: false
+
+# A job has only the permissions it names.
+permissions: {}
+
+jobs:
+  # Builds and checks the image with a read-only token: every download of
+  # the image's build runs here, and never in the job that can push.
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      tar-sha256: ${{ steps.save.outputs.sha256 }}
+    env:
+      IMAGE: toshi-runner:ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token stays out of .git/config, where every later step could
+          # read it: no step after the checkout pushes or fetches.
+          persist-credentials: false
+
+      # Only a dispatch with break_pin breaks a pin, in this checkout only:
+      # the build below must then stop on it.
+      - name: Break a pin
+        if: inputs.break_pin == 'base-digest' || inputs.break_pin == 'toolset-sha256'
+        env:
+          BREAK_PIN: ${{ inputs.break_pin }}
+        run: |
+          set -euo pipefail
+          if [[ $BREAK_PIN == base-digest ]]; then
+            sed -i -E 's/^(ARG BASE=[^@]+)@sha256:[0-9a-f]+$/\1/' ubuntu-24.04-container/Dockerfile
+            grep '^ARG BASE=' ubuntu-24.04-container/Dockerfile
+          else
+            # Node is the first toolset with a SHA-256 pin.
+            sed -i -E 's/^NODE_SHA256=.*/NODE_SHA256=0000000000000000000000000000000000000000000000000000000000000000/' toolsets/versions.env
+            grep '^NODE_SHA256=' toolsets/versions.env
+          fi
+          echo "pin broken on purpose: ${BREAK_PIN}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the image
+        run: |
+          set -o pipefail
+          SECONDS=0
+          ubuntu-24.04-container/build.sh "$IMAGE" 2>&1 | tee "$RUNNER_TEMP/build.log"
+          echo "build: ${SECONDS} s"
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          revision="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")"
+          version="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$IMAGE")"
+          if [[ $revision != "$GITHUB_SHA" ]]; then
+            echo "::error::the image's revision label is '${revision}', the run's commit ${GITHUB_SHA}"
+            exit 1
+          fi
+          echo "image: version ${version}, revision ${revision}"
+          ubuntu-24.04-container/smoke-test.sh "$IMAGE"
+
+      # The OCI tarball, compressed; `docker load` reads it as it is.
+      - name: Save the image
+        id: save
+        run: |
+          set -euo pipefail
+          SECONDS=0
+          tar="$RUNNER_TEMP/toshi-runner-ubuntu-24.04.oci.tar.zst"
+          docker save "$IMAGE" | zstd -T0 -q -o "$tar"
+          sha256="$(sha256sum "$tar" | cut -d' ' -f1)"
+          size="$(docker image inspect -f '{{.Size}}' "$IMAGE")"
+          echo "save: ${SECONDS} s"
+          ls -l "$tar"
+          echo "sha256=${sha256}" >> "$GITHUB_OUTPUT"
+          {
+            echo "image built and smoke-tested: $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$IMAGE")"
+            echo "image size $((size / 1000000)) MB; OCI tarball $(($(stat -c %s "$tar") / 1000000)) MB, sha256 ${sha256}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the OCI tarball
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toshi-runner-ubuntu-24.04-oci
+          path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      # Whether the publish job runs, as its `if:` decides it, in words.
+      - name: Publish gate
+        env:
+          CONTAINER_IMAGE: ${{ vars.CONTAINER_IMAGE }}
+          REHEARSE: ${{ inputs.rehearse_publish == true }}
+        run: |
+          if [[ $GITHUB_REF != refs/tags/v* ]]; then
+            echo "publish skipped: not a release tag (${GITHUB_EVENT_NAME} on ${GITHUB_REF})" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -z $CONTAINER_IMAGE ]]; then
+            echo "publish skipped: CONTAINER_IMAGE not set" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ $REHEARSE == true ]]; then
+            echo "publish rehearsed: the publish-rehearsal job pushes to a registry inside its own job" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The publish job, or the rehearsal, takes the tarball from this job
+      # through a cache entry; its SHA-256 is this job's output, which
+      # publish.sh checks before it loads the file.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: (startsWith(github.ref, 'refs/tags/v') && vars.CONTAINER_IMAGE != '') || inputs.rehearse_publish
+        with:
+          path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
+          key: container-image-${{ github.run_id }}-${{ steps.save.outputs.sha256 }}
+
+  # Pushes the build job's image with the run's own token. It runs no code
+  # of the image's build: publish.sh, from the tagged tree, checks the
+  # tarball's SHA-256, loads it, tags it, pushes it and pulls it back by its
+  # digest.
+  publish:
+    needs: build
+    # The repository variable is read here, not from the build job, so no
+    # step of the build job can start a push.
+    if: startsWith(github.ref, 'refs/tags/v') && vars.CONTAINER_IMAGE != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # The run's own token pushes the image; no token is stored.
+      packages: write
+    outputs:
+      pinned: ${{ steps.push.outputs.pinned }}
+    env:
+      CONTAINER_IMAGE: ${{ vars.CONTAINER_IMAGE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The login goes to the reference's first part, so that part must be
+      # a registry host; the push adds the tags, so it has neither a tag nor
+      # a digest.
+      - name: Check the image reference
+        run: ubuntu-24.04-container/publish.sh check "$CONTAINER_IMAGE"
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
+          key: container-image-${{ github.run_id }}-${{ needs.build.outputs.tar-sha256 }}
+          fail-on-cache-miss: true
+
+      - name: Log in to the registry
+        env:
+          TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s\n' "$TOKEN" | docker login "${CONTAINER_IMAGE%%/*}" -u "$ACTOR" --password-stdin
+
+      - name: Push, pull back and compare
+        id: push
+        env:
+          WANT: ${{ needs.build.outputs.tar-sha256 }}
+          TAR: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
+        run: ubuntu-24.04-container/publish.sh push "$CONTAINER_IMAGE" "$TAR" "$WANT" "$RUNNER_TEMP/toshi-runner-ubuntu-24.04.digest"
+
+      - name: Log out
+        if: always()
+        run: docker logout "${CONTAINER_IMAGE%%/*}"
+
+  # Runs the publish job's script on any ref, when a dispatch sets
+  # rehearse_publish, against a registry this job starts on its loopback
+  # address. It has no write permission and logs in nowhere; publish.sh
+  # refuses any other registry host before it loads the image. Its digest
+  # file, the line the publish job writes, is uploaded as an artifact.
+  publish-rehearsal:
+    needs: build
+    if: inputs.rehearse_publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      reference: ${{ steps.push.outputs.pinned }}
+    env:
+      CONTAINER_IMAGE: 127.0.0.1:5000/toshi-runner
+      REHEARSE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the image reference
+        run: |
+          echo "publish rehearsal: the publish job's steps against a registry inside this job; nothing is published" | tee -a "$GITHUB_STEP_SUMMARY"
+          ubuntu-24.04-container/publish.sh check "$CONTAINER_IMAGE"
+
+      # Docker pushes to a registry on 127.0.0.1 over plain HTTP; the port
+      # is bound on the loopback address only.
+      - name: Start the job's own registry
+        id: registry
+        run: |
+          set -euo pipefail
+          id="$(docker run -d --rm -p 127.0.0.1:5000:5000 registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373)"
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+          for _ in $(seq 30); do
+            if curl -fsS --max-time 2 http://127.0.0.1:5000/v2/ >/dev/null; then
+              echo "registry ${id:0:12} answers on 127.0.0.1:5000"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the registry did not answer in 30 tries, a second apart"
+          exit 1
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
+          key: container-image-${{ github.run_id }}-${{ needs.build.outputs.tar-sha256 }}
+          fail-on-cache-miss: true
+
+      - name: Push, pull back and compare
+        id: push
+        env:
+          WANT: ${{ needs.build.outputs.tar-sha256 }}
+          TAR: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
+        run: ubuntu-24.04-container/publish.sh push "$CONTAINER_IMAGE" "$TAR" "$WANT" "$RUNNER_TEMP/toshi-runner-ubuntu-24.04.digest"
+
+      - name: Upload the digest file
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toshi-runner-ubuntu-24.04-digest
+          path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.digest
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Stop the registry
+        if: always() && steps.registry.outputs.id != ''
+        env:
+          ID: ${{ steps.registry.outputs.id }}
+        run: docker stop "$ID"

@@ -2,9 +2,9 @@
 # Pushes the container tier's image from the build job's OCI tarball to
 # the registry of an image reference, pulls it back by its digest and
 # checks that the registry serves the image the build job saved
-# (README.md, "The workflow"). image-container's publish job runs it on a
-# release tag, and its publish-rehearsal job, with REHEARSE=1, against a
-# registry on the job's own loopback address.
+# (README.md, "The workflow"). The container workflow's publish job runs
+# it on a release tag, and its publish-rehearsal job, with REHEARSE=1,
+# against a registry on the job's own loopback address.
 #
 # Usage: publish.sh check REFERENCE
 #        publish.sh push REFERENCE TARBALL SHA256 DIGEST_FILE
@@ -17,8 +17,7 @@
 # both. The version must be a release tag; with REHEARSE=1 it may
 # instead be the commit, as build.sh labels a build outside a tag.
 # DIGEST_FILE gets one line, the pushed image as REFERENCE@sha256:...,
-# which the publish job also gives as its output `pinned` and as a
-# release asset.
+# which the publish job also gives as its output `pinned`.
 set -euo pipefail
 
 usage="usage: publish.sh check REFERENCE | publish.sh push REFERENCE TARBALL SHA256 DIGEST_FILE"
