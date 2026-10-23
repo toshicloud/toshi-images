@@ -115,7 +115,9 @@ every pull request, every push to `main`, once a week and by hand:
 - `build-fails-fast` breaks the guest's provisioning three ways (QEMU
   exits early, a cloud-init stage fails, a toolset download fails) and
   checks that `build.sh` stops within a minute of the failure in each
-  case, instead of waiting for its build timeout.
+  case, instead of waiting for its build timeout. The toolset case skips
+  the provisioning steps that download, so its time does not depend on
+  the Ubuntu archive; its timeout is 220 seconds.
 
 On a release tag, `publish` pushes the image from `ubuntu-24-04` (see
 [Published images](#published-images)).

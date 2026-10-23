@@ -288,8 +288,7 @@ jobs:
           # The job is about how fast build.sh stops, not whether it builds:
           # each case breaks the guest's provisioning on purpose and must fail
           # well before its own timeout (status 124), which is well before
-          # BUILD_TIMEOUT. toolset provisions the guest's apt packages first,
-          # so it takes longest.
+          # BUILD_TIMEOUT.
           # The QEMU processes, with the kernel function each waits in, and
           # the kernel's last 200 lines: what a hung case leaves to read.
           record_hang() {
@@ -302,16 +301,30 @@ jobs:
           for case in qemu-exit cloud-init toolset; do
             case_timeout=180
             if [ "$case" = toolset ]; then
-              case_timeout=360
+              # The 180 s of the other cases, for the same boot, plus the 40 s
+              # that retry waits between yq's three tries (10 s and 30 s).
+              case_timeout=220
             fi
             rm -rf "${RUNNER_TEMP:?}/$case"
             mkdir -p "$RUNNER_TEMP/$case/tree"
             git archive HEAD | tar -x -C "$RUNNER_TEMP/$case/tree"
             if [ "$case" = toolset ]; then
-              # Provisioning runs unchanged up to the toolsets. The only
-              # toolset is then yq, with a URL on the guest's own loopback
-              # where nothing listens: each of the three tries is refused at
-              # once, whatever the network outside the guest does.
+              # Provisioning goes from loading the download helpers straight
+              # to the toolsets: the steps between them download the apt
+              # packages and the runner's dependencies, which takes as long
+              # as the Ubuntu archive makes it. The only toolset is then yq,
+              # with a URL on the guest's own loopback where nothing listens:
+              # each of the three tries is refused at once, whatever the
+              # network outside the guest does.
+              user_data="$RUNNER_TEMP/$case/tree/ubuntu-24.04/user-data"
+              sed -i '/^      DEBIAN_FRONTEND=noninteractive apt_get update --error-on=any$/,/^      set -a$/{/^      set -a$/!d}' "$user_data"
+              if grep -qE 'apt_get|apt_install|installdependencies' "$user_data" \
+                || ! grep -qxF '      set -a' "$user_data" \
+                || ! grep -qE '^      for t in [$]TOOLSETS; do run_toolset ' "$user_data"; then
+                echo "::error::could not skip the downloads before the toolsets in $case user-data"
+                failed=1
+                continue
+              fi
               printf '%s\n' 'TOOLSETS="yq"' 'YQ_URL="http://127.0.0.1:9/yq"' \
                 >> "$RUNNER_TEMP/$case/tree/toolsets/versions.env"
               # build.sh reports the toolset in one of two lines: the first
