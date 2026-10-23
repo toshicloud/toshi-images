@@ -139,8 +139,14 @@ serial_clean() {
 }
 
 # The line run_toolset (toolsets/lib.sh) prints for a toolset that failed.
+# The guest can still be writing the log's last line, so the log is read once
+# and its last line counts only when it ends in a newline: the empty line that
+# echo appends after a finished log is the one sed drops, and otherwise sed
+# drops the unfinished line.
 failed_toolset_line() {
-  serial_clean | grep -aE -m1 -o 'TOOLSET [a-z-]+ [^ ]+ failed: .*' || true
+  { tr -d '\r' < "${SERIAL_LOG}"; echo; } \
+    | sed -E -e '$d' -e $'s/\e\\[[0-9;]*m//g' \
+    | grep -aE -m1 -o 'TOOLSET [a-z-]+ [^ ]+ failed: .*' || true
 }
 
 report_guest_failure() {
