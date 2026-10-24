@@ -41,16 +41,16 @@ a copy of the repository's `mise.toml`.
 | Tool | Version | Installed by |
 |------|---------|--------------|
 | Python | Ubuntu's noble-updates 3.12.x | `python.sh` |
-| Node.js, npm, corepack | 24.21.0 | `node.sh` |
-| Go | 1.27.1 | `go.sh` |
+| Node.js, npm, corepack | 24.22.1 | `node.sh` |
+| Go | 1.27.3 | `go.sh` |
 | Rust (rustup) | 1.99.0 (rustup 1.29.1) | `rust.sh` |
 | .NET SDK | 10.0.401 | `dotnet.sh` |
 | mise | 2026.9.14 | `mise.sh` |
-| pnpm | 12.9.1 | `mise.sh` |
+| pnpm | 12.15.0 | `mise.sh` |
 | task | 3.54.0 | `mise.sh` |
 | golangci-lint | 2.14.0 | `mise.sh` |
-| buf | 1.73.0 | `mise.sh` |
-| goreleaser | 2.18.2 | `mise.sh` |
+| buf | 1.75.0 | `mise.sh` |
+| goreleaser | 2.19.0 | `mise.sh` |
 | protoc-gen-go | 1.36.11 | `mise.sh` |
 | protoc-gen-connect-go | 1.21.0 | `mise.sh` |
 
