@@ -174,8 +174,8 @@ before the cleanup:
 | PowerShell 7 (`pwsh`) | 7.6.6 | `C:\Program Files\PowerShell\7`, on `PATH` | 7.6 |
 | Git for Windows, with Git LFS, Bash and the Unix tools | 2.56.0.2 | `C:\Program Files\Git`; `cmd`, `bin`, `mingw64\bin` and `usr\bin` on `PATH` | newest |
 | Python, with pip and the `py` launcher | 3.12.10 | `C:\Python312` and its `Scripts`, on `PATH` | 3.12 is the default; also 3.10, 3.11, 3.13, 3.14 |
-| Node.js, with npm | 24.21.0 | `C:\Program Files\nodejs`, on `PATH` | 22 and 24 |
-| Go | 1.27.1 | `C:\Program Files\Go`, `bin` on `PATH` | 1.24 (the default) to 1.26 |
+| Node.js, with npm | 24.22.1 | `C:\Program Files\nodejs`, on `PATH` | 22 and 24 |
+| Go | 1.27.3 | `C:\Program Files\Go`, `bin` on `PATH` | 1.24 (the default) to 1.26 |
 | rustup, with Rust 1.99.0 (the default) and 1.98.1, each with `clippy` and `rustfmt` | rustup 1.29.1 | `C:\Rust` (`RUSTUP_HOME`, `CARGO_HOME`), `C:\Rust\cargo\bin` on `PATH` | stable |
 | .NET SDK 8 and 9 | 8.0.425, 9.0.318 | `C:\Program Files\dotnet`, on `PATH` | also 10 |
 | Eclipse Temurin JDK 17 (the default) and 21 | 17.0.20.1+1, 21.0.12.1+1 | `C:\Program Files\Eclipse Adoptium`; `JAVA_HOME` (17), `JAVA_HOME_17_X64`, `JAVA_HOME_21_X64`; 17's `bin` on `PATH` | also 8, 11, 25 |

@@ -27,10 +27,10 @@ a94dd42ae1fb56b32da180e2173ceda4f0d10b4c8871c5ee59ecb502131a1eb6  wix.4.0.6.nupk
 # Python 3.12.10 amd64 installer, the last 3.12 release with Windows binaries
 # (GitHub's windows-2025 image has the same); digest in python.org's .sigstore bundle.
 67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb  python-3.12.10-amd64.exe
-# Node.js 24.21.0 win-x64 zip; nodejs.org SHASUMS256.txt.
-158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541  node-v24.21.0-win-x64.zip
-# Go 1.27.1 windows-amd64 zip; go.dev/dl.
-a3911b5e0e1b1053f25ed0675f4c1c6aad1e2bfcf253df2b9be4caabd2edd95d  go1.27.1.windows-amd64.zip
+# Node.js 24.22.1 win-x64 zip; nodejs.org SHASUMS256.txt.
+d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5  node-v24.22.1-win-x64.zip
+# Go 1.27.3 windows-amd64 zip; go.dev/dl.
+f26081f438319757f8a1b46d7d0b2c5ec7583d4038e485e0aa725cfde7885fff  go1.27.3.windows-amd64.zip
 # .NET SDK 9.0.318 win-x64; local sha256 (vendor publishes SHA512 only; it matched).
 fe7e5608e8165b179017cb1b709f266dc84d66a5d8ae187cf852ddaa3b96bc4c  dotnet-sdk-9.0.318-win-x64.exe
 # Temurin JDK 17.0.20.1+1 and 21.0.12.1+1 windows x64 zips; Adoptium .sha256.txt.
