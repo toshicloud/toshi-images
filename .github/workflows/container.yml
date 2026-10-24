@@ -118,7 +118,7 @@ jobs:
           path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.oci.tar.zst
           if-no-files-found: error
           compression-level: 0
-          retention-days: 7
+          retention-days: 1
 
       # Whether the publish job runs, as its `if:` decides it, in words.
       - name: Publish gate
@@ -329,7 +329,7 @@ jobs:
           name: toshi-runner-ubuntu-24.04-digest
           path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.digest
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Stop the registry
         if: always() && steps.registry.outputs.id != ''
