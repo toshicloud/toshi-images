@@ -14,3 +14,22 @@ updates:
       actions:
         patterns:
           - "*"
+  - package-ecosystem: docker
+    directory: /ubuntu-24.04-container
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: build(deps)
+    groups:
+      docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
