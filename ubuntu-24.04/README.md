@@ -45,7 +45,7 @@ a copy of the repository's `mise.toml`.
 | Go | 1.27.3 | `go.sh` |
 | Rust (rustup) | 1.99.0 (rustup 1.29.1) | `rust.sh` |
 | .NET SDK | 10.0.401 | `dotnet.sh` |
-| mise | 2026.9.14 | `mise.sh` |
+| mise | 2026.10.18 | `mise.sh` |
 | pnpm | 12.15.0 | `mise.sh` |
 | task | 3.54.0 | `mise.sh` |
 | golangci-lint | 2.14.0 | `mise.sh` |
