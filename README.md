@@ -97,6 +97,13 @@ oras pull -o <dir> ghcr.io/toshicloud/toshi-images/ubuntu-24.04@sha256:<digest>
 
 The Windows image is not published.
 
+Published image digests carry an SPDX SBOM attestation. The SBOM is recorded
+in Rekor v2 using signing services resolved from Sigstore's TUF metadata,
+so it does not depend on a fixed log shard. Verification requires cosign
+3.0.5 or later; use a current release to verify the attestation and its signed
+timestamp against the publishing workflow's release-tag identity. Ordinary
+image signatures and SLSA provenance retain their existing signing configuration.
+
 ## CI
 
 The `images` workflow runs on GitHub-hosted `ubuntu-24.04` runners for

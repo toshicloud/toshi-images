@@ -269,6 +269,9 @@ jobs:
         with:
           cosign-release: v3.1.3
 
+      - name: Resolve the SBOM signing services
+        run: ./attest-sbom.sh config "$RUNNER_TEMP/rekor-v2.json"
+
       # The login goes to a registry config of this step's own, removed on
       # every exit.
       - name: Push, pull back and compare
@@ -348,12 +351,10 @@ jobs:
           SECONDS=0
           trap 'echo "sign/attest/verify: ${SECONDS} s (failed)"' ERR
           cosign sign --yes "$pinned"
-          cosign attest --yes --type spdxjson --predicate "$RUNNER_TEMP/image/ubuntu-24.04.spdx.json" "$pinned"
+          ./attest-sbom.sh predicate "$pinned" "$RUNNER_TEMP/image/ubuntu-24.04.spdx.json" "$identity" \
+            "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/image.sbom.sigstore.json"
           cosign attest --yes --type slsaprovenance1 --predicate "$RUNNER_TEMP/image.provenance.json" "$pinned"
           cosign verify --timeout 90s \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp "$identity" "$pinned"
-          cosign verify-attestation --timeout 90s --check-claims=true --type spdxjson \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity-regexp "$identity" "$pinned"
           cosign verify-attestation --timeout 90s --check-claims=true --type slsaprovenance1 \

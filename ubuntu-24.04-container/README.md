@@ -112,9 +112,13 @@ Otherwise `build` writes why publishing was skipped: `publish skipped:
 not a release tag` on any run but a release tag, and `publish skipped:
 CONTAINER_IMAGE not set` while the variable is unset.
 
-A dispatch with `rehearse_publish` runs `publish.sh` on any ref against
+A dispatch with `rehearse_publish` runs `publish.sh` on a branch against
 a registry that the `publish-rehearsal` job starts on its own loopback
 address, and uploads the digest file as an artifact; the script refuses
 any other registry in a rehearsal. The rehearsal proves the tarball
-check, the load, the tags, the push and the pull back by digest; only a
-release tag proves the login and the push to the real registry.
+check, the load, the tags, the push and the pull back by digest, then
+catalogs the full image and attests and verifies its SBOM through the same
+script as a release. It writes public hashed Rekor v2 entries for the
+digest in that temporary registry. Its verifier accepts only the dispatch's
+exact branch-ref identity, which cannot satisfy a release-tag verifier.
+Only a release tag proves the login and the push to the real registry.
