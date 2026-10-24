@@ -127,7 +127,7 @@ fi
 printf '%s\n' "${ref}@${digest}" >"$digest_file"
 echo "pinned=${ref}@${digest}" >>"${GITHUB_OUTPUT:-/dev/null}"
 {
-	echo "published ${ref}:${version} and :ubuntu-24.04, digest ${digest}"
+	echo "pushed ${ref}:${version} and :ubuntu-24.04, digest ${digest}"
 	echo "pulled back by digest: image ${id}, version ${version}, revision ${revision}, from the OCI tarball with sha256 ${want}"
-	echo "pin for the agent's images.linux: ${ref}@${digest}"
+	echo "pushed reference: ${ref}@${digest}"
 } | tee -a "$summary"
