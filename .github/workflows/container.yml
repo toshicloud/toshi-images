@@ -5,13 +5,14 @@ name: container
 # release tag, and only when the repository variable CONTAINER_IMAGE names
 # an image reference with its registry host and without a tag or digest,
 # the publish job pushes it there. A dispatch with rehearse_publish runs
-# the publish job's script on any ref against a registry inside the job.
+# the publish job's script on a branch against a registry inside the job.
 on:
   pull_request:
     paths:
       - ubuntu-24.04-container/**
       - toolsets/**
       - ubuntu-24.04/versions.env
+      - attest-sbom.sh
       - .github/workflows/container.yml
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - ubuntu-24.04-container/**
       - toolsets/**
       - ubuntu-24.04/versions.env
+      - attest-sbom.sh
       - .github/workflows/container.yml
   workflow_dispatch:
     inputs:
@@ -182,6 +184,9 @@ jobs:
         with:
           cosign-release: v3.1.3
 
+      - name: Resolve the SBOM signing services
+        run: ./attest-sbom.sh config "$RUNNER_TEMP/rekor-v2.json"
+
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           syft-version: v1.52.0
@@ -216,7 +221,6 @@ jobs:
             echo "::error::the push returned no container manifest digest"
             exit 1
           fi
-          syft "registry:${PINNED}" -o "spdx-json=$RUNNER_TEMP/container.spdx.json"
           base=$(sed -n 's/^ARG BASE=//p' ubuntu-24.04-container/Dockerfile)
           # The source revision binds the recipes; the pin-file digests record
           # the exact tool and runner inputs, without claiming vendor identity.
@@ -244,12 +248,10 @@ jobs:
           SECONDS=0
           trap 'echo "sign/attest/verify: ${SECONDS} s (failed)"' ERR
           cosign sign --yes "$PINNED"
-          cosign attest --yes --type spdxjson --predicate "$RUNNER_TEMP/container.spdx.json" "$PINNED"
+          ./attest-sbom.sh container "$PINNED" "$RUNNER_TEMP/container.spdx.json" "$identity" \
+            "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/container.sbom.sigstore.json"
           cosign attest --yes --type slsaprovenance1 --predicate "$RUNNER_TEMP/container.provenance.json" "$PINNED"
           cosign verify --timeout 90s \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp "$identity" "$PINNED"
-          cosign verify-attestation --timeout 90s --check-claims=true --type spdxjson \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity-regexp "$identity" "$PINNED"
           cosign verify-attestation --timeout 90s --check-claims=true --type slsaprovenance1 \
@@ -266,18 +268,19 @@ jobs:
         if: always()
         run: docker logout "${CONTAINER_IMAGE%%/*}"
 
-  # Runs the publish job's script on any ref, when a dispatch sets
+  # Runs the publish job's script on a branch, when a dispatch sets
   # rehearse_publish, against a registry this job starts on its loopback
-  # address. It has no write permission and logs in nowhere; publish.sh
+  # address. It has no package-write permission and logs in nowhere; publish.sh
   # refuses any other registry host before it loads the image. Its digest
   # file, the line the publish job writes, is uploaded as an artifact.
   publish-rehearsal:
     needs: build
-    if: inputs.rehearse_publish
+    if: github.event_name == 'workflow_dispatch' && inputs.rehearse_publish && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
+      id-token: write
     outputs:
       reference: ${{ steps.push.outputs.pinned }}
     env:
@@ -290,8 +293,19 @@ jobs:
 
       - name: Check the image reference
         run: |
-          echo "publish rehearsal: the publish job's steps against a registry inside this job; nothing is published" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "publish rehearsal: no image is published outside this job; SBOM log entries are public" | tee -a "$GITHUB_STEP_SUMMARY"
           ubuntu-24.04-container/publish.sh check "$CONTAINER_IMAGE"
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: Resolve the SBOM signing services
+        run: ./attest-sbom.sh config "$RUNNER_TEMP/rekor-v2.json"
+
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.52.0
 
       # Docker pushes to a registry on 127.0.0.1 over plain HTTP; the port
       # is bound on the loopback address only.
@@ -331,6 +345,23 @@ jobs:
           path: ${{ runner.temp }}/toshi-runner-ubuntu-24.04.digest
           if-no-files-found: error
           retention-days: 1
+
+      - name: Attest and verify the full container SBOM
+        env:
+          PINNED: ${{ steps.push.outputs.pinned }}
+          WORKFLOW_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/container.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          identity="^$(printf '%s' "$WORKFLOW_IDENTITY" | sed 's/[][(){}.^$*+?|\\]/\\&/g')$"
+          ./attest-sbom.sh container "$PINNED" "$RUNNER_TEMP/container.spdx.json" "$identity" \
+            "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/container.sbom.sigstore.json"
+          bytes=$(wc -c < "$RUNNER_TEMP/container.spdx.json")
+          packages=$(jq '.packages | length' "$RUNNER_TEMP/container.spdx.json")
+          echo "v0.1.5 baseline: 35701634 bytes / 5661 packages; difference: $((bytes - 35701634)) bytes / $((packages - 5661)) packages"
+          if (( bytes <= 24 * 1024 * 1024 )); then
+            echo "::error::the SBOM does not exceed the 24 MiB large-attestation proof threshold"
+            exit 1
+          fi
 
       - name: Stop the registry
         if: always() && steps.registry.outputs.id != ''
