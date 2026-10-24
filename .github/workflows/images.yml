@@ -66,6 +66,7 @@ jobs:
     outputs:
       image-sha256: ${{ steps.build.outputs.sha256 }}
       guest-version: ${{ steps.build.outputs.guest-version }}
+      sbom-sha256: ${{ steps.sbom.outputs.sha256 }}
     steps:
       - name: Give the runner user /dev/kvm
         run: |
@@ -138,6 +139,47 @@ jobs:
           set -o pipefail
           ubuntu-24.04/boot-proof.sh "$RUNNER_TEMP/images/ubuntu-24.04.qcow2" passt | tee "$RUNNER_TEMP/proof-passt.log"
 
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.52.0
+
+      # Scan the final guest filesystem, not the opaque qcow2 file. Both
+      # the NBD export and ext4 mount are read-only, without journal replay.
+      - name: SPDX SBOM of the final image
+        id: sbom
+        run: |
+          set -euo pipefail
+          device=/dev/nbd0
+          mount="$RUNNER_TEMP/image-root"
+          sbom="$RUNNER_TEMP/images/ubuntu-24.04.spdx.json"
+          sudo modprobe nbd max_part=16
+          if [[ -e /sys/block/nbd0/pid ]]; then
+            echo "::error::the SBOM's NBD device is already in use"
+            exit 1
+          fi
+          mkdir -p "$mount"
+          sudo qemu-nbd --read-only --connect="$device" "$RUNNER_TEMP/images/ubuntu-24.04.qcow2"
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if mountpoint -q "$mount"; then
+              sudo umount "$mount" || status=1
+            fi
+            sudo qemu-nbd --disconnect "$device" || status=1
+            exit "$status"
+          }
+          trap cleanup EXIT
+          sudo udevadm settle
+          root=$(sudo blkid -t LABEL=cloudimg-rootfs -o device "${device}"p*)
+          if [[ ! $root =~ ^/dev/nbd0p[0-9]+$ ]]; then
+            echo "::error::the final image has no unique cloudimg-rootfs partition"
+            exit 1
+          fi
+          sudo mount -t ext4 -o ro,noload "$root" "$mount"
+          sudo "$(command -v syft)" "dir:${mount}" --source-name ubuntu-24.04.qcow2 -o "spdx-json=${sbom}"
+          jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0)' "$sbom"
+          echo "sha256=$(sha256sum "$sbom" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
       - name: Record QEMU processes and kernel log
         if: failure() || cancelled()
         continue-on-error: true
@@ -170,7 +212,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ubuntu-24.04-qcow2
-          path: ${{ runner.temp }}/images/ubuntu-24.04.qcow2
+          path: |
+            ${{ runner.temp }}/images/ubuntu-24.04.qcow2
+            ${{ runner.temp }}/images/ubuntu-24.04.spdx.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -194,6 +238,10 @@ jobs:
       contents: read
       # The run's own token pushes the image; no token is stored.
       packages: write
+      id-token: write
+    outputs:
+      pinned: ${{ steps.publish.outputs.pinned }}
+      signing-seconds: ${{ steps.publish.outputs.seconds }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -210,14 +258,21 @@ jobs:
           name: ubuntu-24.04-qcow2
           path: ${{ runner.temp }}/image
 
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
       # The login goes to a registry config of this step's own, removed on
       # every exit.
       - name: Push, pull back and compare
+        id: publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ github.ref_name }}
           WANT: ${{ needs.ubuntu-24-04.outputs.image-sha256 }}
           GUEST_VERSION: ${{ needs.ubuntu-24-04.outputs.guest-version }}
+          SBOM_SHA256: ${{ needs.ubuntu-24-04.outputs.sbom-sha256 }}
+          TUF_ROOT: ${{ runner.temp }}/sigstore
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/image"
@@ -226,9 +281,16 @@ jobs:
             exit 1
           fi
           echo "${WANT}  ubuntu-24.04.qcow2" | sha256sum -c -
+          if [[ ! $SBOM_SHA256 =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::the ubuntu-24-04 job gave no SBOM SHA-256"
+            exit 1
+          fi
+          echo "${SBOM_SHA256}  ubuntu-24.04.spdx.json" | sha256sum -c -
           ref="ghcr.io/${GITHUB_REPOSITORY}/ubuntu-24.04"
-          registry_config=$(mktemp -p "$RUNNER_TEMP")
-          trap 'rm -f "$registry_config"' EXIT
+          registry_dir=$(mktemp -d -p "$RUNNER_TEMP")
+          export DOCKER_CONFIG="$registry_dir"
+          registry_config="$registry_dir/config.json"
+          trap 'rm -rf "$registry_dir"' EXIT
           printf '%s\n' "$GITHUB_TOKEN" | oras login ghcr.io --registry-config "$registry_config" \
             -u "$GITHUB_ACTOR" --password-stdin
           digest=$(oras push "${ref}:${VERSION}" \
@@ -247,9 +309,55 @@ jobs:
           fi
           oras pull --no-tty --registry-config "$registry_config" -o "$RUNNER_TEMP/pulled" "${ref}@${digest}"
           echo "${WANT}  $RUNNER_TEMP/pulled/ubuntu-24.04.qcow2" | sha256sum -c -
+          cd "$GITHUB_WORKSPACE"
+          # These pins describe the inputs actually selected by this build.
+          source ubuntu-24.04/versions.env
+          source guest.env
+          for file in ubuntu-24.04/versions.env toolsets/versions.env toolsets/ci/mise.lock guest.env; do
+            jq -n --arg uri "git+https://github.com/${GITHUB_REPOSITORY}@${GITHUB_SHA}#${file}" \
+              --arg sha256 "$(sha256sum "$file" | cut -d' ' -f1)" \
+              '{uri: $uri, digest: {sha256: $sha256}}'
+          done | jq -s . > "$RUNNER_TEMP/materials.json"
+          jq -n \
+            --arg source "git+https://github.com/${GITHUB_REPOSITORY}" --arg commit "$GITHUB_SHA" \
+            --arg builder "https://github.com/${GITHUB_WORKFLOW_REF}" \
+            --arg invocation "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            --arg version "$VERSION" --arg ubuntu "$UBUNTU_IMAGE_URL" --arg ubuntuDigest "$UBUNTU_IMAGE_SHA256" \
+            --arg guest "$TOSHI_GUEST_REF" --arg guestDigest "${TOSHI_GUEST_DIGEST#sha256:}" \
+            --arg image "$WANT" --arg sbom "$SBOM_SHA256" \
+            --slurpfile materials "$RUNNER_TEMP/materials.json" \
+            '{buildDefinition: {buildType: "https://github.com/toshicloud/toshi-images/qcow2/v1",
+              externalParameters: {version: $version, platforms: ["linux/amd64"]},
+              internalParameters: {syft: "1.52.0", cosign: "3.1.3"},
+              resolvedDependencies: ([{uri: $source, digest: {gitCommit: $commit}},
+                {uri: $ubuntu, digest: {sha256: $ubuntuDigest}},
+                {uri: $guest, digest: {sha256: $guestDigest}},
+                {uri: "ubuntu-24.04.qcow2", digest: {sha256: $image}},
+                {uri: "ubuntu-24.04.spdx.json", digest: {sha256: $sbom}}] + $materials[0])},
+              runDetails: {builder: {id: $builder}, metadata: {invocationId: $invocation}}}' \
+            > "$RUNNER_TEMP/image.provenance.json"
+          pinned="${ref}@${digest}"
+          identity='^https://github.com/toshicloud/toshi-images/\.github/workflows/images\.yml@refs/tags/v.*$'
+          SECONDS=0
+          trap 'echo "sign/attest/verify: ${SECONDS} s (failed)"' ERR
+          cosign sign --yes "$pinned"
+          cosign attest --yes --type spdxjson --predicate "$RUNNER_TEMP/image/ubuntu-24.04.spdx.json" "$pinned"
+          cosign attest --yes --type slsaprovenance1 --predicate "$RUNNER_TEMP/image.provenance.json" "$pinned"
+          cosign verify --timeout 90s \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "$identity" "$pinned"
+          cosign verify-attestation --timeout 90s --check-claims=true --type spdxjson \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "$identity" "$pinned"
+          cosign verify-attestation --timeout 90s --check-claims=true --type slsaprovenance1 \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "$identity" "$pinned"
+          echo "seconds=${SECONDS}" >> "$GITHUB_OUTPUT"
+          echo "pinned=${pinned}" >> "$GITHUB_OUTPUT"
           {
-            echo "ubuntu-24.04 ${VERSION}: ${ref}@${digest}"
+            echo "published and verified ubuntu-24.04 ${VERSION}: ${pinned}"
             echo "ubuntu-24.04.qcow2 sha256 ${WANT}, toshi-guest ${GUEST_VERSION}"
+            echo "keyless signature, subject-bound SPDX SBOM and SLSA v1 provenance; sign/attest/verify: ${SECONDS} s"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
   build-fails-fast:
