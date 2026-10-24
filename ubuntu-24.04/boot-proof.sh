@@ -141,7 +141,7 @@ fail() {
   exit 1
 }
 
-done_marker() { grep -aq '^TOSHI-PROOF: DONE' "${SERIAL_LOG}" 2>/dev/null; }
+done_marker() { grep -aq 'TOSHI-PROOF: DONE' "${SERIAL_LOG}" 2>/dev/null; }
 while ! done_marker; do
   if ! kill -0 "${qemu_pid}" 2>/dev/null; then
     # The guest powers off right after the marker: read the log once more.
@@ -179,7 +179,7 @@ fi
 wait "${qemu_pid}" 2>/dev/null || true
 qemu_pid=""
 
-proof() { grep -a "^TOSHI-PROOF: $1 " "${SERIAL_LOG}" | tail -n 1 | tr -d '\r' | cut -d' ' -f3-; }
+proof() { grep -a "TOSHI-PROOF: $1 " "${SERIAL_LOG}" | tail -n 1 | tr -d '\r' | sed "s/.*TOSHI-PROOF: $1 //"; }
 service=$(proof service)
 version=$(proof version)
 https=$(proof https)
