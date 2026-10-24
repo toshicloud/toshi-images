@@ -45,6 +45,12 @@ jobs:
           install_args: --locked
           cache: false
 
+      - name: Tool lockfiles are up to date
+        run: |
+          mise lock
+          (cd toolsets/ci && mise lock)
+          git diff --exit-code -- mise.lock mise.packer.lock toolsets/ci/mise.lock
+
       - name: shellcheck
         run: git ls-files -z '*.sh' | xargs -0 shellcheck
 
