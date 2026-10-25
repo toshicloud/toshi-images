@@ -6,6 +6,11 @@ name: images
 # provisioning breaks stops fast. QEMU runs with accel=kvm and no TCG
 # fallback, so a runner without usable KVM fails. On a release tag the
 # publish job pushes the image that passed the boot proof to GHCR.
+#
+# Lint runs on every event. The jobs that build and boot an image run on a
+# pull request or a push to main only when the change touches a file they
+# read, or this workflow; a release tag, the weekly run and a dispatch run
+# all of them.
 
 on:
   pull_request:
@@ -28,6 +33,66 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decides whether the build jobs can give a different answer, from the
+  # files the change touches. It runs on every event, including the ones
+  # that build the full set.
+  changed:
+    name: changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.inputs.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: select the build jobs
+        id: inputs
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          set -f
+          # Every path the Ubuntu build, its boot proof and the fail-fast
+          # cases read, and this workflow, whose steps they are.
+          read -r -a inputs <<< "ubuntu-24.04/** toolsets/** guest.env fetch-guest.sh mise.toml mise.lock .github/workflows/images.yml"
+          run_all() {
+            echo "### $1" >> "$GITHUB_STEP_SUMMARY"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          case "$EVENT" in
+            pull_request)
+              base=$BASE
+              ;;
+            push)
+              [[ $REF != refs/tags/* ]] || run_all "release tag: the full set runs"
+              base=$BEFORE
+              if [[ ! $base =~ ^[0-9a-f]{40}$ ]] || [[ $base =~ ^0+$ ]]; then
+                run_all "first push of the branch: the full set runs"
+              fi
+              ;;
+            *)
+              run_all "$EVENT: the full set runs"
+              ;;
+          esac
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            git fetch --quiet --no-tags origin "$base" \
+              || run_all "the base commit is not available: the full set runs"
+          fi
+          changed=$(git diff --name-only "$base" "$GITHUB_SHA" -- "${inputs[@]}")
+          if [[ -n $changed ]]; then
+            printf '%s\n' "$changed" | tee -a "$GITHUB_STEP_SUMMARY"
+            run_all "an image input changed: the build jobs run"
+          fi
+          echo "### no image input changed: the build jobs do not run" >> "$GITHUB_STEP_SUMMARY"
+          echo "run=false" >> "$GITHUB_OUTPUT"
+
   lint:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -67,6 +132,8 @@ jobs:
             aws/windows-2025.pkr.hcl
 
   ubuntu-24-04:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
@@ -369,6 +436,8 @@ jobs:
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
   build-fails-fast:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

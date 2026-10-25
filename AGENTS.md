@@ -36,10 +36,16 @@ change touches before your first change.
     the Windows template), `ubuntu-24-04` (builds the Ubuntu image and
     runs `ubuntu-24.04/boot-proof.sh` over user-mode networking and passt)
     and `build-fails-fast` (`build.sh` stops fast on three broken builds).
+    The last two run when the change touches an image input
+    (`ubuntu-24.04/`, `toolsets/`, `guest.env`, `fetch-guest.sh`,
+    `mise.toml`, `mise.lock`, `.github/workflows/images.yml`); a release
+    tag, the weekly run and a dispatch run them.
   - `container`, when the change touches the container recipe, the
     toolsets or the runner's pins: builds the container image and runs its
     smoke test.
-  - `kvm`: boots the stock Ubuntu cloud image under KVM.
+  - `kvm`: weekly, after the weekly `images` build, and on dispatch: boots
+    the stock Ubuntu cloud image under KVM. The image build's boot proof
+    covers every change that can affect an image.
 - Every job that boots a VM runs under KVM on a hosted runner and never
   falls back to TCG.
 - Workflows use only the run's own `GITHUB_TOKEN`. This repository has no
