@@ -3,9 +3,15 @@ name: kvm
 # Boots the Ubuntu cloud image under QEMU with KVM on a GitHub-hosted runner
 # and fails unless the guest reaches its cloud-init marker. QEMU runs with
 # accel=kvm and no TCG fallback, so a runner without usable KVM fails.
+#
+# The images workflow builds and boots its image under KVM whenever it runs,
+# so the runner's KVM and the cloud image are proved there for every change
+# that can affect an image. This probe runs once a week, after that build,
+# and by hand.
 
 on:
-  pull_request:
+  schedule:
+    - cron: "47 4 * * 1"
   workflow_dispatch:
 
 permissions:

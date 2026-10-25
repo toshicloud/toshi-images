@@ -107,7 +107,11 @@ image signatures and SLSA provenance retain their existing signing configuration
 ## CI
 
 The `images` workflow runs on GitHub-hosted `ubuntu-24.04` runners for
-every pull request, every push to `main`, once a week and by hand:
+every pull request and every push to `main`. `lint` runs on every run; the
+jobs that build and boot an image run only when the change touches a file
+they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `fetch-guest.sh`,
+`mise.toml`, `mise.lock` or `.github/workflows/images.yml`. A release tag,
+the weekly run and a dispatch run them all:
 
 - `lint` runs shellcheck over every script and validates the Windows
   template with Packer. The Windows image itself is not built in CI.
@@ -134,8 +138,9 @@ plain `docker run`; on a release tag it publishes the image once the
 repository variable `CONTAINER_IMAGE` is set. See
 [its README](ubuntu-24.04-container/README.md#the-workflow).
 
-The `kvm` workflow boots the stock Ubuntu cloud image under KVM, as a
-quick check that the hosted runner gives jobs a usable `/dev/kvm`.
+The `kvm` workflow boots the stock Ubuntu cloud image under KVM once a
+week, after the `images` build, and by hand: the image build's own boot
+proof covers every change that can affect an image.
 
 Every job that boots a VM makes `/dev/kvm` writable first and fails if it
 cannot. QEMU runs with `accel=kvm` and never falls back to the much slower
