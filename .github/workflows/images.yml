@@ -243,6 +243,18 @@ jobs:
           }
           trap cleanup EXIT
           sudo udevadm settle
+          # The partition nodes appear when udev handles the device's add
+          # events, which can land after settle returns. Until they exist the
+          # glob below stays literal and blkid exits 2, so wait for one,
+          # bounded, and say so if it never arrives.
+          deadline=$((SECONDS + 30))
+          until compgen -G "${device}p*" > /dev/null; do
+            if (( SECONDS >= deadline )); then
+              echo "::error::${device} has no partition nodes 30 s after qemu-nbd connected"
+              exit 1
+            fi
+            sleep 0.5
+          done
           root=$(sudo blkid -t LABEL=cloudimg-rootfs -o device "${device}"p*)
           if [[ ! $root =~ ^/dev/nbd0p[0-9]+$ ]]; then
             echo "::error::the final image has no unique cloudimg-rootfs partition"
