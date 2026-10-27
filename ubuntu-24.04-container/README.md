@@ -9,7 +9,7 @@ It is made from the same inputs as
 in the same order, the [`toolsets/`](../toolsets/) scripts at the pins
 in `toolsets/versions.env`, and the runner at the version and SHA256 in
 `ubuntu-24.04/versions.env`. It has no kernel, boot loader or
-cloud-init. It differs from the VM image in five ways:
+cloud-init. It differs from the VM image in six ways:
 
 - the cloud image's user-space packages, from the manifest published
   beside the pinned cloud image, minus those in `cloud-exclude.txt`
@@ -21,7 +21,12 @@ cloud-init. It differs from the VM image in five ways:
 - `runner` keeps passwordless `sudo`;
 - it has no guest helper: the container provider bind-mounts the host's
   `toshi-guest` (`guest_binary`), which ships with the agent, so an image
-  outlives agent upgrades and the helper has one path.
+  outlives agent upgrades and the helper has one path;
+- it leaves out three sets of files no job uses, removed in the same `RUN`
+  as the step that installs them so the compressed layer shrinks instead of
+  hiding them: the runner's musl-only copies of its bundled node
+  (`externals/node20_alpine`, `node24_alpine`), the JDKs' `lib/src.zip`, and
+  the interactive `cmake-gui` and `ccmake`.
 
 Its pinned inputs are the base image's digest (in the `Dockerfile`), the
 runner and toolsets with their SHA256s, and the Playwright release. The

@@ -39,9 +39,14 @@ RUN set -eux; . /opt/build/toolsets/lib.sh; \
     useradd -m -u 1001 -s /bin/bash -G docker,kvm runner; \
     echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner; chmod 0440 /etc/sudoers.d/runner
 
+# The runner archive also carries its bundled node for musl in
+# externals/node20_alpine and node24_alpine, which only a musl runner loads;
+# a Linux job never does. They come out in this RUN, so their bytes never
+# reach a layer.
 RUN set -eux; . /opt/build/toolsets/lib.sh; . /opt/build/ubuntu-versions.env; \
     fetch_verified "$RUNNER_URL" sha256 "$RUNNER_SHA256" /opt/build/runner.tar.gz; \
     mkdir -p /opt/actions-runner; tar -xzf /opt/build/runner.tar.gz -C /opt/actions-runner; rm /opt/build/runner.tar.gz; \
+    rm -rf /opt/actions-runner/externals/node20_alpine /opt/actions-runner/externals/node24_alpine; \
     chown -R runner:runner /opt/actions-runner; \
     bounded /opt/actions-runner/bin/installdependencies.sh; \
     mkdir -p /home/runner/_work /cache; chown runner:runner /home/runner/_work /cache
@@ -50,12 +55,16 @@ RUN set -eux; . /opt/build/toolsets/lib.sh; . /opt/build/ubuntu-versions.env; \
 # has none: docker-nodaemon.sh is docker.sh up to that point, then a check of
 # the installed package's version.
 COPY ubuntu-24.04-container/docker-version.sh /opt/build/docker-version.sh
+# The JDKs carry javac's sources in lib/src.zip, and CMake ships the
+# interactive cmake-gui and ccmake; a job in this image uses none of them.
+# They come out in the same RUN as the toolsets that install them.
 RUN set -eux; cd /opt/build/toolsets; \
     grep -q '^# Rootful daemon' docker.sh; \
     sed '/^# Rootful daemon/,$d' docker.sh > docker-nodaemon.sh; \
     cat /opt/build/docker-version.sh >> docker-nodaemon.sh; \
     . ./lib.sh; set -a; . ./versions.env; set +a; \
     for t in $TOOLSETS; do [[ $t != docker ]] || t=docker-nodaemon; run_toolset "$t"; done; \
+    rm -f /usr/lib/jvm/*/lib/src.zip /usr/local/bin/cmake-gui /usr/local/bin/ccmake; \
     printf '[global]\nbreak-system-packages = true\n' > /etc/pip.conf
 
 # Chromium's shared libraries, from Playwright's own list for the release the
