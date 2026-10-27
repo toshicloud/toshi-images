@@ -1,0 +1,145 @@
+name: pin-pr
+
+# When a release tag has built and published the images, open the pull request
+# in toshicloud/toshi.run that pins them in deploy/images.env, so the queue
+# lands the pin like any other change. A failed build leaves no tag: this
+# workflow deletes the tag a guest pin created when the tag's build failed.
+#
+# It runs when images.yml or container.yml finishes for a v* tag. Each run
+# asks the registry for both manifests: while the other publication is still
+# running the pull request waits for its completion, and a second trigger
+# finds the pull request already open and does nothing. A tag a maintainer
+# pushed by hand is handled the same way; the deletion only touches a tag
+# whose commit is a guest pin.
+#
+# The credential is a GitHub App installed on both repositories with contents
+# and pull requests written; without it the job says so and succeeds.
+on:
+  workflow_run:
+    workflows: [images, container]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to pin, v0.1.N
+        type: string
+        required: true
+      commit:
+        description: The commit the tag names
+        type: string
+        required: true
+      dry_run:
+        description: Print the images.env change, open no pull request
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: pin-pr-${{ github.event.workflow_run.head_branch || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  pin:
+    if: >-
+      (github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'v')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'v'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REPOSITORY_IMAGES: toshicloud/toshi-images
+      REPOSITORY_RUN: toshicloud/toshi.run
+      TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
+      COMMIT: ${{ github.event.workflow_run.head_sha || inputs.commit }}
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+    steps:
+      - name: credential
+        id: credential
+        env:
+          APP_ID: ${{ secrets.TOSHI_CHAIN_APP_ID }}
+          APP_KEY: ${{ secrets.TOSHI_CHAIN_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z $APP_ID || -z $APP_KEY ]]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: no credential, skipped
+        if: steps.credential.outputs.present != 'true'
+        run: |
+          echo "pin-pr: no credential, skipped"
+
+      - name: token for toshi.run
+        id: token
+        if: steps.credential.outputs.present == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.TOSHI_CHAIN_APP_ID }}
+          private-key: ${{ secrets.TOSHI_CHAIN_APP_PRIVATE_KEY }}
+          owner: toshicloud
+          repositories: toshi.run
+          permission-contents: write
+          permission-pull-requests: write
+
+      # A failed build of a tag a guest pin created: remove the tag, so a
+      # failed build leaves no tag. A tag a maintainer pushed names a commit
+      # that is not a guest pin and is left alone.
+      - name: remove the tag of a failed build
+        id: cleanup
+        if: steps.credential.outputs.present == 'true' && github.event_name == 'workflow_run' && env.CONCLUSION != 'success'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          subject=$(gh api "repos/${REPOSITORY_IMAGES}/commits/${COMMIT}" --jq '.commit.message | split("\n")[0]')
+          if [[ $subject != 'chore(guest): pin '* ]]; then
+            echo "pin-pr: ${TAG} names '${subject}', not a guest pin: the tag is left alone"
+            exit 0
+          fi
+          if gh api -X DELETE "repos/${REPOSITORY_IMAGES}/git/refs/tags/${TAG}" >/dev/null; then
+            echo "pin-pr: deleted ${TAG}: its build failed, so the release leaves no tag"
+          else
+            echo "pin-pr: could not delete ${TAG}; delete it by hand before the next release"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
+        with:
+          repository: toshicloud/toshi.run
+          ref: main
+          path: toshi.run
+          token: ${{ steps.token.outputs.token }}
+
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
+        with:
+          version: 2026.10.18
+          # oras reads the manifests; the pin itself needs gh and jq.
+          install_args: --locked aqua:oras-project/oras
+          cache: false
+
+      - name: pin the images and open the pull request
+        if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          CONTAINER_REF: ${{ vars.CONTAINER_IMAGE }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          runs=$(gh api "repos/${REPOSITORY_IMAGES}/actions/runs?head_sha=${COMMIT}&per_page=100" \
+            --jq '[.workflow_runs[] | select((.name == "images" or .name == "container") and .conclusion == "success")] | map("\(.name) \(.id)") | join(", ")')
+          arguments=()
+          if [[ ${DRY:-false} == true ]]; then
+            arguments+=(--dry-run)
+          fi
+          RUNS="$runs" REPOSITORY="$REPOSITORY_RUN" \
+            scripts/pin-images-env.sh "$TAG" "$COMMIT" toshi.run "${arguments[@]}"
