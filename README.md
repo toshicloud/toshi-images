@@ -67,6 +67,16 @@ To bake another guest, such as a local build of `toshi-guest`, set
 without a version reports `dev`, and the Linux build warns. The container
 image has no guest; [its README](ubuntu-24.04-container/README.md) says why.
 
+A guest helper that Toshi publishes is pinned here by the `guest-pin`
+workflow, without a person in the chain: Toshi's `guest` workflow sends a
+`repository_dispatch` of type `guest-published` with the helper's version and
+digest, `guest-pin` writes both into `guest.env` on `main` and pushes the next
+`v0.1.N` tag, and the `pin-pr` workflow opens the pull request in Toshi that
+pins the images those tag runs published. A repeated dispatch with the same
+version and digest commits nothing and creates no tag; a failed build loses
+its tag again, so only a release that built has one. The tag-triggered
+publication is unchanged.
+
 ## Install an image
 
 `install.sh` installs a built image into the host agent's `image_dir`:
@@ -83,8 +93,9 @@ on it, so a new build gets a new name.
 
 ## Published images
 
-On a release tag (`v*`) the `images` workflow pushes the Ubuntu image that
-passed its boot proof in that run to
+On a release tag (`v*`), whether a maintainer pushed it or the `guest-pin`
+workflow created it for a new guest helper, the `images` workflow pushes the
+Ubuntu image that passed its boot proof in that run to
 `ghcr.io/toshicloud/toshi-images/ubuntu-24.04`, tagged with the release, as
 an OCI artefact that holds `ubuntu-24.04.qcow2`. The job summary gives the
 reference at its digest and the qcow2's SHA-256. Pull it by digest with
@@ -132,6 +143,17 @@ the weekly run and a dispatch run them all:
 
 On a release tag, `publish` pushes the image from `ubuntu-24-04` (see
 [Published images](#published-images)).
+
+The `guest-pin` workflow pins a guest helper that Toshi published: it runs
+on that repository's `guest-published` dispatch, writes the version and
+digest into `guest.env` and pushes the next release tag (see
+[The guest helper](#the-guest-helper)). The `pin-pr` workflow runs when
+`images` or `container` finishes for a release tag: once both have published,
+it opens the pull request in Toshi that moves Toshi's image pins to the new
+digests, and when a tag's build fails it deletes a tag a guest pin created.
+Both workflows need the GitHub App named by `TOSHI_CHAIN_APP_ID` and
+`TOSHI_CHAIN_APP_PRIVATE_KEY`; without it each says "no credential, skipped"
+and succeeds. `pin-pr` also runs on a dispatch, to rehearse a pin by hand.
 
 The `container` workflow builds the container image and checks it with a
 plain `docker run`; on a release tag it publishes the image once the

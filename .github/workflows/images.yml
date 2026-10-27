@@ -119,6 +119,17 @@ jobs:
       - name: shellcheck
         run: git ls-files -z '*.sh' | xargs -0 shellcheck
 
+      # The pin scripts a guest publish runs (guest-pin.yml, pin-pr.yml): they
+      # write guest.env and deploy/images.env and open the pin pull request,
+      # so their fixture tests run on every images run, in seconds.
+      - name: the pin scripts' tests
+        run: |
+          set -euo pipefail
+          for file in scripts/*_test.sh; do
+            echo "test: ${file}"
+            bash "$file"
+          done
+
       # The Windows template is validated only: the image is built by hand
       # on a Linux host with KVM (windows-2025/README.md).
       - name: Validate the Windows template
