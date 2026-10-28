@@ -12,6 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY toolsets /opt/build/toolsets
+COPY railpack.env /opt/build/railpack.env
 COPY ubuntu-24.04/versions.env /opt/build/ubuntu-versions.env
 COPY ubuntu-24.04-container/cloud-exclude.txt /opt/build/cloud-exclude.txt
 

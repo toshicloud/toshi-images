@@ -6,6 +6,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "${SCRIPT_DIR}/versions.env"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../toolsets/versions.env"
+# Railpack's pins, which its toolset reads from the seed.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../railpack.env"
 
 CACHE_DIR="${CACHE_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/toshi-images}"
 OUT_DIR="${OUT_DIR:-${CACHE_DIR}/out}"
@@ -182,6 +185,11 @@ toolset_expected_pattern() {
     gh) echo "${GH_VERSION//./[.]}" ;;
     yq) echo "${YQ_VERSION//./[.]}" ;;
     git-lfs) echo "${GIT_LFS_VERSION//./[.]}" ;;
+    # `railpack --version` reports the version without the pin's leading v.
+    railpack)
+      local reported="${RAILPACK_VERSION#v}"
+      echo "${reported//./[.]}"
+      ;;
     *)
       echo "unknown toolset: ${name}" >&2
       exit 1
@@ -336,6 +344,9 @@ install -m 0755 "${TOSHI_GUEST_BIN}" "${seed_dir}/toshi-guest"
 cp "${runner_tarball}" "${seed_dir}/actions-runner-linux-x64.tar.gz"
 cp "${go_tarball}" "${seed_dir}/go.tar.gz"
 cp -r "${SCRIPT_DIR}/../toolsets" "${seed_dir}/toolsets"
+# Railpack's pin file sits next to guest.env at the repository root, and its
+# toolset reads it from beside the toolsets.
+cp "${SCRIPT_DIR}/../railpack.env" "${seed_dir}/railpack.env"
 echo "TRY_MAX_TIME=${TRY_MAX_TIME}" > "${seed_dir}/toolsets/limits.env"
 (
   cd "${seed_dir}"

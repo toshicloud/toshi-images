@@ -13,6 +13,7 @@ write next to themselves on the ISO.
 | `dotnet.sh` | .NET SDK tarball | `/usr/share/dotnet`, `dotnet` in `/usr/local/bin` |
 | `mise.sh` | mise, and the CI tools in `ci/mise.toml` at the SHA256s in `ci/mise.lock` | `/usr/local/bin/mise`, `/usr/local/share/mise/installs` |
 | `docker.sh` | Docker Engine, containerd and the buildx and compose CLI plugins | system; plugins in `/usr/libexec/docker/cli-plugins` |
+| `railpack.sh` | Railpack CLI of every pinned version, and each version's BuildKit frontend as an OCI archive | `/opt/toshi/railpack` |
 | `java.sh` | Temurin JDK 17, 21 and 25 (17 default), on the alternatives system | `/usr/lib/jvm`, `update-alternatives` |
 | `cmake.sh` | CMake tarball | `/usr/local` |
 | `gh.sh` | GitHub CLI `.deb` | system |
@@ -23,6 +24,15 @@ Pins and download URLs live in `versions.env`. The `TOOLSETS` variable lists the
 run order. Shared helpers are in `lib.sh`: `fetch_verified` downloads a file and
 checks its checksum, and `retry` runs a command that downloads up to three times.
 [Download limits](#download-limits) has the time limit of each try.
+
+Railpack is the exception: its pins, one set per version, are in
+[`../railpack.env`](../railpack.env), next to `guest.env`, and the image build
+copies that file into the seed beside this directory. `railpack.sh` installs
+each version under `/opt/toshi/railpack/<version>`: the CLI, the licence it
+ships with, the BuildKit frontend as an OCI archive (`frontend.tar`, a layout
+tar with `index.json`), the digest that archive holds (`frontend.digest`) and
+the release asset's checksum (`railpack.sha256`). `/opt/toshi/railpack/pinned`
+names the version the image carries now.
 
 ## Bumping a version
 
@@ -38,6 +48,15 @@ major.minor checked against the interpreter, and apt installs whatever the noble
 packages currently are. The weekly `images` workflow rebuilds the image and fails if
 a pin is wrong or stale.
 
+Railpack is pinned in `railpack.env`, one set per version: to move it, add the
+new version to `RAILPACK_VERSIONS` (oldest first), set `RAILPACK_VERSION` to
+it, and add its `RAILPACK_CLI_SHA256_<version>` from the release's
+`checksums.txt` and its `RAILPACK_FRONTEND_DIGEST_<version>` from
+`ghcr.io/railwayapp/railpack-frontend:<version>`. A version's dots become
+underscores in the variable name. Keep the older versions and their lines:
+the image keeps them installed, so an image rebuilt from an older checkout
+still finds the frontend its pin names.
+
 ## Build contract
 
 When a script finishes successfully it prints one line to the serial console:
@@ -46,8 +65,9 @@ When a script finishes successfully it prints one line to the serial console:
 TOOLSET <name> <version>
 ```
 
-`<version>` is what the installed tool reports, not the pin string alone. The image
-build greps the serial log for these lines (and later `TOOLSET env ok`) to verify
+`<version>` is what the installed tool reports, not the pin string alone. `railpack.sh`
+prints the version its CLI reports for the pinned release, without the leading `v`
+that the pin carries. The image build greps the serial log for these lines (and later `TOOLSET env ok`) to verify
 the toolsets.
 
 A script that fails does not print that line. The image build runs each
