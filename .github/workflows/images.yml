@@ -402,7 +402,7 @@ jobs:
           # These pins describe the inputs actually selected by this build.
           source ubuntu-24.04/versions.env
           source guest.env
-          for file in ubuntu-24.04/versions.env toolsets/versions.env toolsets/ci/mise.lock guest.env; do
+          for file in ubuntu-24.04/versions.env toolsets/versions.env toolsets/ci/mise.lock guest.env railpack.env; do
             jq -n --arg uri "git+https://github.com/${GITHUB_REPOSITORY}@${GITHUB_SHA}#${file}" \
               --arg sha256 "$(sha256sum "$file" | cut -d' ' -f1)" \
               '{uri: $uri, digest: {sha256: $sha256}}'
