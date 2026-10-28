@@ -227,7 +227,8 @@ jobs:
           # The source revision binds the recipes; the pin-file digests record
           # the exact tool and runner inputs, without claiming vendor identity.
           for file in ubuntu-24.04-container/Dockerfile ubuntu-24.04-container/versions.env \
-            ubuntu-24.04/versions.env toolsets/versions.env toolsets/ci/mise.lock; do
+            ubuntu-24.04/versions.env toolsets/versions.env toolsets/ci/mise.lock \
+            railpack.env; do
             jq -n --arg uri "git+https://github.com/${GITHUB_REPOSITORY}@${GITHUB_SHA}#${file}" \
               --arg sha256 "$(sha256sum "$file" | cut -d' ' -f1)" \
               '{uri: $uri, digest: {sha256: $sha256}}'
