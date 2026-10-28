@@ -37,9 +37,10 @@ change touches before your first change.
     runs `ubuntu-24.04/boot-proof.sh` over user-mode networking and passt)
     and `build-fails-fast` (`build.sh` stops fast on three broken builds).
     The last two run when the change touches an image input
-    (`ubuntu-24.04/`, `toolsets/`, `guest.env`, `fetch-guest.sh`,
-    `mise.toml`, `mise.lock`, `.github/workflows/images.yml`); a release
-    tag, the weekly run and a dispatch run them.
+    (`ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
+    `fetch-guest.sh`, `mise.toml`, `mise.lock`,
+    `.github/workflows/images.yml`); a release tag, the weekly run and a
+    dispatch run them.
   - `container`, when the change touches the container recipe, the
     toolsets or the runner's pins: builds the container image and runs its
     smoke test.

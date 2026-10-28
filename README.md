@@ -109,9 +109,9 @@ image signatures and SLSA provenance retain their existing signing configuration
 The `images` workflow runs on GitHub-hosted `ubuntu-24.04` runners for
 every pull request and every push to `main`. `lint` runs on every run; the
 jobs that build and boot an image run only when the change touches a file
-they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `fetch-guest.sh`,
-`mise.toml`, `mise.lock` or `.github/workflows/images.yml`. A release tag,
-the weekly run and a dispatch run them all:
+they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
+`fetch-guest.sh`, `mise.toml`, `mise.lock` or `.github/workflows/images.yml`.
+A release tag, the weekly run and a dispatch run them all:
 
 - `lint` runs shellcheck over every script and validates the Windows
   template with Packer. The Windows image itself is not built in CI.

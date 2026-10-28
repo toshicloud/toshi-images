@@ -12,6 +12,7 @@ on:
       - ubuntu-24.04-container/**
       - toolsets/**
       - ubuntu-24.04/versions.env
+      - railpack.env
       - attest-sbom.sh
       - .github/workflows/container.yml
   push:
@@ -22,6 +23,7 @@ on:
       - ubuntu-24.04-container/**
       - toolsets/**
       - ubuntu-24.04/versions.env
+      - railpack.env
       - attest-sbom.sh
       - .github/workflows/container.yml
   workflow_dispatch:

@@ -60,7 +60,7 @@ jobs:
           set -f
           # Every path the Ubuntu build, its boot proof and the fail-fast
           # cases read, and this workflow, whose steps they are.
-          read -r -a inputs <<< "ubuntu-24.04/** toolsets/** guest.env fetch-guest.sh mise.toml mise.lock .github/workflows/images.yml"
+          read -r -a inputs <<< "ubuntu-24.04/** toolsets/** guest.env railpack.env fetch-guest.sh mise.toml mise.lock .github/workflows/images.yml"
           run_all() {
             echo "### $1" >> "$GITHUB_STEP_SUMMARY"
             echo "run=true" >> "$GITHUB_OUTPUT"
