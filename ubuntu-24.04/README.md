@@ -34,9 +34,10 @@ the 9p tag `toshi-share`, on `/mnt/toshi-share`.
 
 ## Tools
 
-Every pin is in [`../toolsets/versions.env`](../toolsets/versions.env) or,
-for the CI tools, in [`../toolsets/ci/mise.toml`](../toolsets/ci/mise.toml),
-a copy of the repository's `mise.toml`.
+Every pin is in [`../toolsets/versions.env`](../toolsets/versions.env), in
+[`../railpack.env`](../railpack.env) for Railpack, or, for the CI tools, in
+[`../toolsets/ci/mise.toml`](../toolsets/ci/mise.toml), a copy of the
+repository's `mise.toml`.
 
 | Tool | Version | Installed by |
 |------|---------|--------------|
@@ -53,6 +54,16 @@ a copy of the repository's `mise.toml`.
 | goreleaser | 2.19.0 | `mise.sh` |
 | protoc-gen-go | 1.36.11 | `mise.sh` |
 | protoc-gen-connect-go | 1.21.0 | `mise.sh` |
+| Railpack | v0.43.0 (every version the pin lists) | `railpack.sh` |
+
+`railpack.sh` keeps each pinned Railpack release under
+`/opt/toshi/railpack/<version>`: the CLI, the licence it ships with, and the
+release's BuildKit frontend as an OCI archive (`frontend.tar`) with the digest
+that archive holds (`frontend.digest`). `/opt/toshi/railpack/pinned` names the
+version the image carries now; a version stays there when the pin moves, so an
+image rebuilt from an older checkout still finds the frontend its pin names.
+The boot proof checks that the pinned CLI reports its version and that
+`frontend.digest` is the digest in the archive's `index.json`.
 
 `mise.sh` installs the CI tools into mise's system directory,
 `/usr/local/share/mise/installs`, where every mise looks. A job that runs

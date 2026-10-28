@@ -23,12 +23,20 @@ expect_complete_proof() {
   expect_proof service active
   expect_proof version test-version
   expect_proof https 200
+  expect_proof railpack v0.43.0
+  expect_proof railpack_version 0.43.0
+  expect_proof railpack_frontend sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc
+  expect_proof railpack_archive sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc
 }
 
 printf '%s\r\n' \
   'TOSHI-PROOF: service active' \
   'TOSHI-PROOF: version test-version' \
   'boot-proof login: TOSHI-PROOF: https 200' \
+  'TOSHI-PROOF: railpack v0.43.0' \
+  'TOSHI-PROOF: railpack_version 0.43.0' \
+  'TOSHI-PROOF: railpack_frontend sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc' \
+  'TOSHI-PROOF: railpack_archive sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc' \
   'TOSHI-PROOF: DONE' >"${SERIAL_LOG}"
 expect_complete_proof
 printf 'ok - login prompt before HTTPS marker\n'
@@ -38,6 +46,11 @@ printf '%s\r\n' \
   'console: TOSHI-PROOF: service inactive TOSHI-PROOF: service active' \
   'TOSHI-PROOF: version old TOSHI-PROOF: version test-version' \
   'boot-proof login: TOSHI-PROOF: https 500 TOSHI-PROOF: https 200' \
+  'TOSHI-PROOF: railpack v0.42.0' \
+  'console: TOSHI-PROOF: railpack v0.42.0 TOSHI-PROOF: railpack v0.43.0' \
+  'console: TOSHI-PROOF: railpack_version 0.42.0 TOSHI-PROOF: railpack_version 0.43.0' \
+  'console: TOSHI-PROOF: railpack_frontend sha256:old TOSHI-PROOF: railpack_frontend sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc' \
+  'console: TOSHI-PROOF: railpack_archive sha256:old TOSHI-PROOF: railpack_archive sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc' \
   'boot-proof login: TOSHI-PROOF: DONE' >"${SERIAL_LOG}"
 expect_complete_proof
 printf 'ok - prefixed completion and last marker values\n'

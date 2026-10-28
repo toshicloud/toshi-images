@@ -162,6 +162,14 @@ toolset_pin() {
 	gh) echo "$GH_VERSION" ;;
 	yq) echo "$YQ_VERSION" ;;
 	git-lfs) echo "$GIT_LFS_VERSION" ;;
+	# Railpack pins its versions and their checksums in ../railpack.env,
+	# next to guest.env; the image build puts that file in the seed beside
+	# this directory.
+	railpack) (
+		# shellcheck disable=SC1090,SC1091
+		source "${BASH_SOURCE[0]%/*}/../railpack.env"
+		echo "$RAILPACK_VERSION"
+	) ;;
 	*) echo unknown ;;
 	esac
 }

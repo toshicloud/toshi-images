@@ -119,8 +119,10 @@ the weekly run and a dispatch run them all:
   then boots it twice with `ubuntu-24.04/boot-proof.sh`, once over
   QEMU's user-mode networking and once over passt, the two network modes
   the host agent uses. Each boot passes only if `toshi-guest.service` is
-  active, the helper reports the pinned version and an outbound HTTPS
-  request is answered. The job summary carries one line per boot, and
+  active, the helper reports the pinned version, an outbound HTTPS request is
+  answered, and the image's Railpack pin names a version whose CLI reports it
+  and whose frontend archive holds the digest beside it. The job summary
+  carries one line per boot, and
   the built `ubuntu-24.04.qcow2` is kept as a workflow artifact for 7
   days.
 - `build-fails-fast` breaks the guest's provisioning three ways (QEMU

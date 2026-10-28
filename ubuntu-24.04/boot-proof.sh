@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../guest.env"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../railpack.env"
 
 if [[ $# -ne 2 ]]; then
   echo "usage: boot-proof.sh <image.qcow2> <user|passt>" >&2
@@ -21,6 +23,8 @@ NETWORK=$2
 # The version the image's guest must report: the pinned one, unless the
 # image was built with another TOSHI_GUEST_BIN.
 EXPECT_GUEST_VERSION="${EXPECT_GUEST_VERSION:-${TOSHI_GUEST_VERSION}}"
+# The Railpack version the image pins at /opt/toshi/railpack/pinned.
+EXPECT_RAILPACK_VERSION="${EXPECT_RAILPACK_VERSION:-${RAILPACK_VERSION}}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}"
 # Seconds the guest has to power off after it reported the proof.
 SHUTDOWN_TIMEOUT="${SHUTDOWN_TIMEOUT:-60}"
@@ -44,6 +48,10 @@ if [[ ! -f "${IMAGE}" ]]; then
 fi
 if [[ -z "${EXPECT_GUEST_VERSION}" ]]; then
   echo "no guest version to expect: guest.env pins none and EXPECT_GUEST_VERSION is unset" >&2
+  exit 1
+fi
+if [[ -z "${EXPECT_RAILPACK_VERSION}" ]]; then
+  echo "no Railpack version to expect: railpack.env pins none and EXPECT_RAILPACK_VERSION is unset" >&2
   exit 1
 fi
 if [[ ! -w /dev/kvm ]]; then
@@ -82,6 +90,12 @@ runcmd:
     echo "TOSHI-PROOF: service \$state" >/dev/ttyS0
     echo "TOSHI-PROOF: version \$(/usr/local/bin/toshi-guest version | awk '\$1 == "toshi-guest" {print \$2}')" >/dev/ttyS0
     echo "TOSHI-PROOF: https \$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 ${PROOF_URL} 2>&1)" >/dev/ttyS0
+    railpack_dir=/opt/toshi/railpack
+    railpack=\$(cat "\$railpack_dir/pinned")
+    echo "TOSHI-PROOF: railpack \$railpack" >/dev/ttyS0
+    echo "TOSHI-PROOF: railpack_version \$("\$railpack_dir/\$railpack/railpack" --version | awk '{print \$NF}')" >/dev/ttyS0
+    echo "TOSHI-PROOF: railpack_frontend \$(cat "\$railpack_dir/\$railpack/frontend.digest")" >/dev/ttyS0
+    echo "TOSHI-PROOF: railpack_archive \$(tar -xOf "\$railpack_dir/\$railpack/frontend.tar" index.json | jq -r --arg version "\$railpack" '.manifests[] | select(.annotations["org.opencontainers.image.ref.name"] == \$version) | .digest')" >/dev/ttyS0
     echo "TOSHI-PROOF: DONE" >/dev/ttyS0
     systemctl poweroff
 USERDATA
@@ -183,8 +197,26 @@ proof() { grep -a "TOSHI-PROOF: $1 " "${SERIAL_LOG}" | tail -n 1 | tr -d '\r' | 
 service=$(proof service)
 version=$(proof version)
 https=$(proof https)
+railpack=$(proof railpack)
+railpack_version=$(proof railpack_version)
+railpack_frontend=$(proof railpack_frontend)
+railpack_archive=$(proof railpack_archive)
 [[ "${service}" == active ]] || fail "toshi-guest.service is '${service}', not active"
 [[ "${version}" == "${EXPECT_GUEST_VERSION}" ]] || fail "the guest reports version '${version}', expected ${EXPECT_GUEST_VERSION}"
 [[ "${https}" =~ ^[23][0-9][0-9]$ ]] || fail "HTTPS to ${PROOF_URL} gave '${https}'"
+# The image pins one Railpack version, that version's CLI reports it, and the
+# frontend archive beside it holds the image its digest names.
+railpack_digest_name="RAILPACK_FRONTEND_DIGEST_${EXPECT_RAILPACK_VERSION//./_}"
+railpack_expect_digest=${!railpack_digest_name:-}
+[[ "${railpack}" == "${EXPECT_RAILPACK_VERSION}" ]] \
+  || fail "Railpack pins '${railpack}', expected ${EXPECT_RAILPACK_VERSION}"
+[[ "${railpack_version}" == "${EXPECT_RAILPACK_VERSION#v}" ]] \
+  || fail "the Railpack CLI reports '${railpack_version}', expected ${EXPECT_RAILPACK_VERSION#v}"
+[[ -n "${railpack_expect_digest}" ]] \
+  || fail "railpack.env pins no frontend digest for ${EXPECT_RAILPACK_VERSION}"
+[[ "${railpack_frontend}" == "${railpack_expect_digest}" ]] \
+  || fail "the frontend digest is '${railpack_frontend}', expected ${railpack_expect_digest}"
+[[ "${railpack_frontend}" == "${railpack_archive}" ]] \
+  || fail "the frontend archive holds '${railpack_archive}', not ${railpack_frontend}"
 
-echo "boot proof (${NETWORK}): proof in ${seconds} s; toshi-guest ${version} active; HTTPS ${PROOF_URL} ${https}"
+echo "boot proof (${NETWORK}): proof in ${seconds} s; toshi-guest ${version} active; HTTPS ${PROOF_URL} ${https}; Railpack ${railpack_version}, frontend ${railpack_frontend}"

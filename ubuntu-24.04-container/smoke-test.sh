@@ -18,6 +18,7 @@ if [[ ${1:-} != --inside ]]; then
 		-v "$here/smoke-test.sh:/opt/smoke/smoke-test.sh:ro" \
 		-v "$here/Dockerfile:/opt/smoke/Dockerfile:ro" \
 		-v "$here/../toolsets/versions.env:/opt/smoke/toolsets.env:ro" \
+		-v "$here/../railpack.env:/opt/smoke/railpack.env:ro" \
 		-v "$here/../ubuntu-24.04/versions.env:/opt/smoke/ubuntu.env:ro" \
 		"$image" /opt/smoke/smoke-test.sh --inside
 fi
@@ -27,6 +28,7 @@ set +eu
 set -a
 . /etc/environment
 . /opt/smoke/toolsets.env
+. /opt/smoke/railpack.env
 . /opt/smoke/ubuntu.env
 set +a
 failed=0
@@ -77,6 +79,18 @@ v=$(yq --version | awk '{print $NF}')
 check yq "$YQ_VERSION" "${v#v}"
 v=$(git-lfs version | awk '{print $1}')
 check git-lfs "$GIT_LFS_VERSION" "${v#git-lfs/}"
+# Railpack: the pin, the CLI it names, and the frontend archive that pin
+# describes.
+railpack=/opt/toshi/railpack
+railpack_version=$(cat "$railpack/pinned")
+check railpack "$RAILPACK_VERSION" "$railpack_version"
+check railpack-cli "${RAILPACK_VERSION#v}" "$("$railpack/$railpack_version/railpack" --version | awk '{print $NF}')"
+railpack_digest=$(cat "$railpack/$railpack_version/frontend.digest")
+check railpack-frontend "$railpack_digest" \
+	"$(tar -xOf "$railpack/$railpack_version/frontend.tar" index.json \
+		| jq -r --arg version "$railpack_version" '.manifests[] | select(.annotations["org.opencontainers.image.ref.name"] == $version) | .digest')"
+railpack_digest_pin="RAILPACK_FRONTEND_DIGEST_${RAILPACK_VERSION//./_}"
+check railpack-frontend-pin "${!railpack_digest_pin}" "$railpack_digest"
 # A toolset added to TOOLSETS without a line above fails here.
 for t in $TOOLSETS; do
 	if [[ $checked != *" $t "* ]]; then
