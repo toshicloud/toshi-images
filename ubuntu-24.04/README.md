@@ -24,6 +24,15 @@ start.
 A second `user` entry in `/etc/fstab` lets it mount a filler's host share,
 the 9p tag `toshi-share`, on `/mnt/toshi-share`.
 
+A workload reaches the services it is bound to by name. The drop-in
+`/etc/systemd/resolved.conf.d/toshi-bindings.conf` sends the `toshi` and
+`toshi.internal` zones to `toshi-guest`'s resolver on `127.84.0.1`. The
+unit's `CAP_NET_BIND_SERVICE` lets the helper answer on port 53 and listen at
+a bound channel's port. Guest port 7851 is reserved for the helper: the host
+joins a bound connection there, so nothing else in the image may listen on
+it. A helper that predates bindings ignores the drop-in, and every other
+name resolves through the network's DNS as before.
+
 | File | Purpose |
 |------|---------|
 | `build.sh` | downloads and verifies the inputs, boots the build VM, writes the image |

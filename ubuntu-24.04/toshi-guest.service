@@ -11,7 +11,10 @@ ConditionVirtualization=!google
 [Service]
 User=runner
 Group=runner
-AmbientCapabilities=CAP_SYS_TIME
+# CAP_NET_BIND_SERVICE: the helper answers the bound-service names on
+# 127.84.0.1 port 53, and listens at a bound channel's port, which may be
+# below 1024.
+AmbientCapabilities=CAP_SYS_TIME CAP_NET_BIND_SERVICE
 WorkingDirectory=/opt/actions-runner
 ExecStart=/usr/local/bin/toshi-guest run --transport serial:/dev/virtio-ports/toshi.guest
 Restart=on-failure
