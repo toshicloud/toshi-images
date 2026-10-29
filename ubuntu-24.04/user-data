@@ -151,6 +151,14 @@ write_files:
       SUBSYSTEM=="virtio-ports", ATTR{name}=="toshi.guest", OWNER="runner", GROUP="runner", MODE="0600", TAG+="systemd"
       SUBSYSTEM=="block", KERNEL=="vd*[!0-9]", ATTRS{serial}=="toshi-cache", OWNER="runner", GROUP="runner", MODE="0600"
       SUBSYSTEM=="block", KERNEL=="vd*[!0-9]", ATTRS{serial}=="toshi-volume", OWNER="runner", GROUP="runner", MODE="0600"
+  - path: /etc/systemd/resolved.conf.d/toshi-bindings.conf
+    permissions: "0644"
+    content: |
+      # A workload reaches its bound services by name: systemd-resolved
+      # sends the two binding zones to toshi-guest's resolver.
+      [Resolve]
+      DNS=127.84.0.1
+      Domains=~toshi ~toshi.internal
   - path: /etc/cloud/cloud.cfg.d/99-toshi.cfg
     permissions: "0644"
     content: |
