@@ -14,8 +14,10 @@ change touches before your first change.
 3. **What comes from Toshi is a published artefact.** This repository
    builds without Toshi's source. The guest helper is the OCI artefact
    that `guest.env` pins by version and digest, and `fetch-guest.sh` pulls
-   and checks it. A pin moves in a pull request of its own. The guest's
-   protocol and the host agent belong to Toshi.
+   and checks it. A pin moves in a pull request of its own, except the
+   guest helper's: the `guest-published` dispatch Toshi sends makes
+   `guest-pin` write that pin on `main` and push the next release tag. The
+   guest's protocol and the host agent belong to Toshi.
 4. **Pinned tools.** `mise.toml` pins the scripts' tools and
    `mise.packer.toml` (with `MISE_ENV=packer`) adds Packer; each has its
    lock file. CI installs them with mise 2026.9.14, so refresh a lock file
@@ -49,10 +51,15 @@ change touches before your first change.
     covers every change that can affect an image.
 - Every job that boots a VM runs under KVM on a hosted runner and never
   falls back to TCG.
-- Workflows use only the run's own `GITHUB_TOKEN`. This repository has no
-  secrets.
-- A release is a `v*` tag pushed by a maintainer. CI publishes images only
-  from such a tag.
+- Every workflow uses only the run's own `GITHUB_TOKEN`, except
+  `guest-pin` and `pin-pr`: those two alone use the GitHub App's id and
+  key, `TOSHI_CHAIN_APP_ID` and `TOSHI_CHAIN_APP_PRIVATE_KEY`, which are
+  the repository's only secrets. While the secrets are absent both say so
+  and succeed.
+- A release is a `v*` tag pushed by a maintainer, or by `guest-pin` after
+  a guest publish. CI publishes images only from such a tag, and a tag
+  that `guest-pin` pushed is deleted when its build fails, so only a
+  release that built keeps one.
 - Everything in this repository is public: no hostnames, IP addresses,
   account names, credentials or paths from a particular machine in code,
   docs, commit messages or pull requests.
