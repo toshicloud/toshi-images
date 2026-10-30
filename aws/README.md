@@ -37,7 +37,8 @@ AWS_PROFILE=toshi-images AWS_REGION=eu-central-1 BUCKET=my-image-bucket \
 
 `DRY_RUN=1` converts the disk and prints the AWS calls without making
 them. The script needs the AWS CLI v2 and `qemu-img`. It prints the AMI ID
-to pass to `toshi tenant hosts add --ami`.
+to pass to `toshi tenant hosts add --ami`. The AMI is built by hand today: no
+workflow runs `build-ami.sh`.
 
 An AMI is regional: build or copy one per region the cloud hosts use
 (`aws ec2 copy-image`).
@@ -117,43 +118,6 @@ Its permission policy (replace `my-image-bucket`):
 These are build-time permissions in the operator's account. The control
 plane never uses them, and the tenant's role (docs/byoc-aws.md) needs none
 of them.
-
-## From GitHub Actions
-
-The `ami` workflow (`.github/workflows/ami.yml`, started by hand with a
-region and the accounts to share with) builds the image on a KVM runner,
-with the guest built from the commit and its version stamped, then runs
-`build-ami.sh` and puts the AMI ID and the guest's version in the run's
-summary. It needs two repository secrets, and stops in its first step,
-naming the missing ones, without them:
-
-| Secret | Value |
-|--------|-------|
-| `AWS_AMI_ROLE_ARN` | a role in the image account with the script's permissions above |
-| `AWS_AMI_BUCKET` | the upload bucket, in the AMI's region |
-
-The workflow assumes the role with its GitHub OIDC token, so no AWS keys
-are stored. The account needs GitHub's OIDC provider
-(`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`), and
-the role trusts only this repository's main branch (replace the account
-and repository):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Principal": { "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com" },
-    "Action": "sts:AssumeRoleWithWebIdentity",
-    "Condition": {
-      "StringEquals": {
-        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": "repo:my-org/my-repo:ref:refs/heads/main"
-      }
-    }
-  }]
-}
-```
 
 ## What the image relies on at boot
 
@@ -255,8 +219,9 @@ What this does not cover, and what it needs:
 
 ### Checking it without an account
 
-CI (`packer-validate` in `.github/workflows/ci.yml`) runs `packer fmt
--check` and `packer validate`, which need no credentials and start nothing.
+CI (`lint` in `.github/workflows/images.yml`) runs `packer fmt -check` and
+`packer validate` on the template, which need no credentials and start
+nothing.
 `AWS_REGION=eu-west-1 aws/build-windows-2025.sh validate` runs
 `packer validate` with a certificate made the way a build makes it.
 

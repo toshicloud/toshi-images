@@ -45,8 +45,8 @@ name resolves through the network's DNS as before.
 
 Every pin is in [`../toolsets/versions.env`](../toolsets/versions.env), in
 [`../railpack.env`](../railpack.env) for Railpack, or, for the CI tools, in
-[`../toolsets/ci/mise.toml`](../toolsets/ci/mise.toml), a copy of the
-repository's `mise.toml`.
+[`../toolsets/ci/mise.toml`](../toolsets/ci/mise.toml), a copy of the CI
+tools from Toshi's `mise.toml`.
 
 | Tool | Version | Installed by |
 |------|---------|--------------|
@@ -58,11 +58,11 @@ repository's `mise.toml`.
 | mise | 2026.10.18 | `mise.sh` |
 | pnpm | 12.15.0 | `mise.sh` |
 | task | 3.54.0 | `mise.sh` |
-| golangci-lint | 2.14.0 | `mise.sh` |
+| golangci-lint | 2.15.0 | `mise.sh` |
 | buf | 1.75.0 | `mise.sh` |
 | goreleaser | 2.19.0 | `mise.sh` |
-| protoc-gen-go | 1.36.11 | `mise.sh` |
-| protoc-gen-connect-go | 1.21.0 | `mise.sh` |
+| protoc-gen-go | 1.36.12 | `mise.sh` |
+| protoc-gen-connect-go | 1.21.1 | `mise.sh` |
 | Railpack | v0.43.0 (every version the pin lists) | `railpack.sh` |
 
 `railpack.sh` keeps each pinned Railpack release under
