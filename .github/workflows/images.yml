@@ -85,7 +85,7 @@ jobs:
             git fetch --quiet --no-tags origin "$base" \
               || run_all "the base commit is not available: the full set runs"
           fi
-          changed=$(git diff --name-only "$base" "$GITHUB_SHA" -- "${inputs[@]}")
+          changed=$(git diff --name-only "$base" "$GITHUB_SHA" -- "${inputs[@]}" ':(exclude,glob)**/*.md')
           if [[ -n $changed ]]; then
             printf '%s\n' "$changed" | tee -a "$GITHUB_STEP_SUMMARY"
             run_all "an image input changed: the build jobs run"

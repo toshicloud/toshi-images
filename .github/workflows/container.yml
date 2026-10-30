@@ -15,6 +15,7 @@ on:
       - railpack.env
       - attest-sbom.sh
       - .github/workflows/container.yml
+      - '!**/*.md'
   push:
     branches: [main]
     # GitHub ignores the paths filter for a tag: every release tag runs.
@@ -26,6 +27,7 @@ on:
       - railpack.env
       - attest-sbom.sh
       - .github/workflows/container.yml
+      - '!**/*.md'
   workflow_dispatch:
     inputs:
       break_pin:
