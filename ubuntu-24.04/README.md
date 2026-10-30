@@ -21,9 +21,11 @@ image also installs `passt`, the QEMU provider's default per-VM network:
 a nested-KVM job that
 boots VMs through the provider needs it on the `PATH`, or the agent refuses to
 start.
-Two more `user` entries in `/etc/fstab` let it mount a job's state volume,
-the disk with serial `toshi-volume`, on `/volume`, and a filler's host
-share, the 9p tag `toshi-share`, on `/mnt/toshi-share`.
+Another `user` entry in `/etc/fstab` lets it mount a job's state volume,
+the disk with serial `toshi-volume`, on `/volume`. A filler's share is a
+copy the host puts in `/mnt/toshi-share`, which the runner user owns, and
+the udev rule gives that user the raw disk with serial `toshi-output`, to
+which toshi-guest writes the filler's output.
 
 A workload reaches the services it is bound to by name. The drop-in
 `/etc/systemd/resolved.conf.d/toshi-bindings.conf` sends the `toshi` and
