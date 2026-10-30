@@ -1,6 +1,6 @@
 # ubuntu-24.04-container
 
-Builds the Linux runner image as an OCI image, for the container tier:
+Builds the Linux runner as an OCI image for the container tier:
 jobs in Sysbox containers on a tenant's own host without KVM. The agent's
 container provider runs it.
 
