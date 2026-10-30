@@ -1,6 +1,6 @@
 # ubuntu-24.04
 
-Builds `ubuntu-24.04.qcow2`, the Linux runner image for the QEMU provider:
+Builds the Linux runner image for the QEMU provider, `ubuntu-24.04.qcow2`:
 the official Ubuntu 24.04 cloud image with the GitHub Actions runner in
 `/opt/actions-runner`, pinned language toolsets on the path (Python, Node, Go,
 Rust and .NET SDK) and Toshi's own CI tools (see [Tools](#tools)), and
