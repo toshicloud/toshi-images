@@ -11,7 +11,7 @@ in the container registry instead.
 | `toshi-runner-ubuntu-24.04-oci` | `container.yml` / `build` | None; `publish` and `publish-rehearsal` restore the run's image from the Actions cache, not this artifact. | push (main), tag, dispatch | Multi-GB image archive | 1 day | Short-lived download of the smoke-tested container image. |
 | `toshi-runner-ubuntu-24.04-digest` | `container.yml` / `publish-rehearsal` | None | dispatch with `rehearse_publish` | Small digest file | 1 day | Records the registry round-trip result for the run. |
 | `ubuntu-24.04-logs` | `images.yml` / `ubuntu-24-04` | None | pull_request and push (main) when an image input changed; tag, dispatch, schedule | Diagnostic text | 7 days | Keeps build, boot and failure details for diagnosis. |
-| `ubuntu-24.04-qcow2` | `images.yml` / `ubuntu-24-04` | `images.yml` / `publish`, in the same release-tag run | pull_request and push (main) when an image input changed; tag, dispatch, schedule | Multi-GB disk image and SBOM | 1 day | Temporary handoff to publication; the released image lives in the registry. |
+| `ubuntu-24.04-qcow2` | `images.yml` / `ubuntu-24-04` | `images.yml` / `publish`, in the same release-tag run | push (main) when an image input changed; tag, dispatch, schedule | Multi-GB disk image and SBOM | 1 day | Temporary handoff to publication; the released image lives in the registry. |
 | `build-fails-fast-logs` | `images.yml` / `build-fails-fast` | None | pull_request and push (main) when an image input changed; tag, dispatch, schedule | Diagnostic text | 7 days | Keeps evidence from the deliberately failing build cases. |
 | `kvm-probe-serial` | `kvm.yml` / `probe` | None | schedule, dispatch | Diagnostic text | 7 days | Keeps the KVM boot probe's serial output. |
 

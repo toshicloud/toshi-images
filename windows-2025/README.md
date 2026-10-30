@@ -103,6 +103,7 @@ fails. The serial log records the activation's expiry date.
 | `BUILD_TIMEOUT` | `7200` | seconds to wait for the install and first logon |
 | `BOOT_KEY_SECONDS` | `10` | seconds the build sends Enter at boot to pass the boot-from-CD prompt; longer can reach Setup's Cancel button |
 | `TOSHI_QEMU_ACCEL` | `kvm` | `kvm` or `tcg` |
+| `QEMU_SYSTEM`, `QEMU_IMG` | `qemu-system-x86_64`, `qemu-img` | the programs it runs |
 | `OVMF_CODE`, `OVMF_VARS` | see `build.sh` | OVMF 4M firmware code and the variable-store template; each build gets a fresh copy of the variables, Secure Boot off |
 | `TOSHI_GUEST_EXE` | the pinned guest, pulled into `$OUT_DIR/guest` | a prebuilt `toshi-guest.exe` for windows/amd64 |
 
@@ -245,7 +246,8 @@ does not.
 ## Update an input
 
 Change the URL, the version (for the Windows media, `WINDOWS_ISO_FILE` and
-`WINDOWS_ISO_BUILD`) and the checksum in `versions.env` and `SHA256SUMS`
+`WINDOWS_ISO_BUILD`, and `WINDOWS_IMAGE_NAME`, the edition the answer file
+installs, when the media names it differently) and the checksum in `versions.env` and `SHA256SUMS`
 together. Microsoft publishes no checksum for the evaluation ISO, so a media
 refresh behind the same link fails the check; compute the new SHA256 from the
 downloaded file, record the date with `date -u`, and bump the entry

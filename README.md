@@ -9,17 +9,21 @@ and a Linux container image, reviewed and versioned like code. There is no macOS
 | [`ubuntu-24.04`](ubuntu-24.04/README.md) | `ubuntu-24.04.qcow2` for the QEMU provider | bash, cloud-init and QEMU |
 | [`windows-2025`](windows-2025/README.md) | `windows-2025.qcow2` for the QEMU provider | bash, an answer file and QEMU |
 | [`ubuntu-24.04-container`](ubuntu-24.04-container/README.md) | an OCI image for the container tier | Docker |
+| [`aws`](aws/README.md) | an AMI from `ubuntu-24.04.qcow2` (`build-ami.sh`), and the Windows Server 2025 AMI of a cloud pool (`build-windows-2025.sh`) | bash and the AWS CLI; Packer and OpenSSL for Windows |
+| [`gcp`](gcp/README.md) | a Compute Engine image from `ubuntu-24.04.qcow2` (`build-image.sh`) | bash and gcloud |
 
 The [`toolsets/`](toolsets/) directory holds shared Bash install scripts and
-`versions.env` pins for language toolchains (Python, Node, Go, Rust, .NET).
+`versions.env` pins for the toolsets `TOOLSETS` lists there: Python, Node,
+Go, Rust, .NET, mise, Docker, Railpack, Java, CMake, gh, yq and Git LFS.
 Each Ubuntu (and future Linux) image build copies that tree into the guest
 and runs the scripts during provisioning.
 
-Each image directory holds:
+Each VM and container image directory holds:
 
 - `build.sh`, which builds the image on a suitable host;
 - `versions.env`, which pins every input the build downloads, with its
-  SHA256 (`ubuntu-24.04-container` reads `ubuntu-24.04`'s; its README
+  SHA256 (`ubuntu-24.04-container` reads the runner from
+  `ubuntu-24.04`'s, and its own pins the Playwright release; its README
   lists what else it downloads);
 - the files the build copies into the guest;
 - a `README.md` that says what the build needs and how to run it.
@@ -54,8 +58,9 @@ publishes it as one OCI artefact that holds `toshi-guest` (linux/amd64) and
 `toshi-guest.exe` (windows/amd64), and [`guest.env`](guest.env) pins the
 artefact these images carry by version and digest. Each VM image's
 `build.sh` runs [`fetch-guest.sh`](fetch-guest.sh), which pulls that digest
-with [oras](https://oras.land) and checks that the artefact and its Linux
-binary report the pinned version. [`mise.toml`](mise.toml) pins oras:
+with [oras](https://oras.land), reads its version with `jq`, and checks that
+the artefact and its Linux binary report the pinned version. Both must be on
+the `PATH`; [`mise.toml`](mise.toml) pins oras:
 
 ```sh
 mise install
@@ -126,8 +131,10 @@ they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
 `fetch-guest.sh`, `mise.toml`, `mise.lock` or `.github/workflows/images.yml`.
 A release tag, the weekly run and a dispatch run them all:
 
-- `lint` runs shellcheck over every script and validates the Windows
-  template with Packer. The Windows image itself is not built in CI.
+- `lint` runs shellcheck over every script, validates the Windows
+  template with Packer, and fails when `mise.lock`, `mise.packer.lock` or
+  `toolsets/ci/mise.lock` is out of date. The Windows image itself is not
+  built in CI.
 - `ubuntu-24-04` builds the Ubuntu image with the pinned guest helper,
   then boots it twice with `ubuntu-24.04/boot-proof.sh`, once over
   QEMU's user-mode networking and once over passt, the two network modes
@@ -136,8 +143,8 @@ A release tag, the weekly run and a dispatch run them all:
   answered, and the image's Railpack pin names a version whose CLI reports it
   and whose frontend archive holds the digest beside it. The job summary
   carries one line per boot, and
-  the built `ubuntu-24.04.qcow2` is kept as a workflow artifact for a day,
-  and the run's logs for seven.
+  except on a pull request the built `ubuntu-24.04.qcow2` is kept as a
+  workflow artifact for a day; the run's logs are kept for seven.
 - `build-fails-fast` breaks the guest's provisioning three ways (QEMU
   exits early, a cloud-init stage fails, a toolset download fails) and
   checks that `build.sh` stops within a minute of the failure in each

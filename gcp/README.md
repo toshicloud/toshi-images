@@ -41,7 +41,9 @@ project) to `toshi tenant hosts add --image`, so new builds are picked up.
 Other settings: `IMAGE_NAME` (default `toshi-ubuntu-2404-<UTC time>`),
 `IMAGE_FAMILY`, `STORAGE_LOCATION` (empty lets GCE choose the
 multi-region nearest the bucket), `GUEST_OS_FEATURES`, `GCS_PREFIX`,
-`IMAGE`, `WORK_DIR`.
+`IMAGE`, `WORK_DIR`, `CACHE_DIR` (default
+`${XDG_CACHE_HOME:-~/.cache}/toshi-images`), and `QEMU_IMG` and `GCLOUD`,
+the programs it runs. `-h` prints its usage.
 
 Images are global: one image serves every zone.
 
