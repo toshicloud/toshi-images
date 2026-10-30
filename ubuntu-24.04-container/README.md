@@ -94,7 +94,8 @@ runner's pins; on a dispatch; and on every release tag (`v*`). Its
 `build` job builds the image with `build.sh`, checks that the revision
 label is the run's commit, runs the smoke test, saves the image as a
 zstd-compressed tarball (`docker save`, which `docker load` reads as it
-is) and uploads it as an artifact kept for 7 days. The tarball's SHA-256
+is) and, except on a pull request, uploads it as an artifact kept for a
+day. The tarball's SHA-256
 and sizes go to the job summary.
 
 A broken pin stops the build at the pin: `build.sh` refuses a

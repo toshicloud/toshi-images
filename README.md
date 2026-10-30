@@ -82,14 +82,16 @@ publication is unchanged.
 `install.sh` installs a built image into the host agent's `image_dir`:
 
 ```sh
-install.sh <image.qcow2> --image-dir <dir> [--name <name>] [--owner <user>:<group>] [--mode <mode>]
+install.sh <image.qcow2> --image-dir <dir> [--name <name>] [--owner <user>:<group>] [--mode <mode>] [--replace]
 ```
 
 It checks that the file is a qcow2 image, copies it as `<name>.qcow2`
 (by default the file's own name) with the directory's owner and mode 0640,
 and writes `<sha256>  <name>.qcow2` into `<dir>/SHA256SUMS`. It refuses to
-replace an installed image, because the agent's VMs and snapshots are built
-on it, so a new build gets a new name.
+replace an installed image unless `--replace` is given, because the agent's
+VMs and snapshots are built on it, so a new build normally gets a new name.
+`--replace` renames the new file over the old one: running VMs keep reading
+the old file, and a warm pool notices within a minute.
 
 ## Published images
 
@@ -134,8 +136,8 @@ A release tag, the weekly run and a dispatch run them all:
   answered, and the image's Railpack pin names a version whose CLI reports it
   and whose frontend archive holds the digest beside it. The job summary
   carries one line per boot, and
-  the built `ubuntu-24.04.qcow2` is kept as a workflow artifact for 7
-  days.
+  the built `ubuntu-24.04.qcow2` is kept as a workflow artifact for a day,
+  and the run's logs for seven.
 - `build-fails-fast` breaks the guest's provisioning three ways (QEMU
   exits early, a cloud-init stage fails, a toolset download fails) and
   checks that `build.sh` stops within a minute of the failure in each
