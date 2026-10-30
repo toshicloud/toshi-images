@@ -21,8 +21,9 @@ image also installs `passt`, the QEMU provider's default per-VM network:
 a nested-KVM job that
 boots VMs through the provider needs it on the `PATH`, or the agent refuses to
 start.
-A second `user` entry in `/etc/fstab` lets it mount a filler's host share,
-the 9p tag `toshi-share`, on `/mnt/toshi-share`.
+Two more `user` entries in `/etc/fstab` let it mount a job's state volume,
+the disk with serial `toshi-volume`, on `/volume`, and a filler's host
+share, the 9p tag `toshi-share`, on `/mnt/toshi-share`.
 
 A workload reaches the services it is bound to by name. The drop-in
 `/etc/systemd/resolved.conf.d/toshi-bindings.conf` sends the `toshi` and
@@ -179,6 +180,19 @@ guest helper:
 ubuntu-24.04/boot-proof.sh $HOME/.cache/toshi-images/out/ubuntu-24.04.qcow2 user
 ubuntu-24.04/boot-proof.sh $HOME/.cache/toshi-images/out/ubuntu-24.04.qcow2 passt
 ```
+
+It reads these settings from the environment:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `EXPECT_GUEST_VERSION` | `TOSHI_GUEST_VERSION` from `guest.env` | the version the guest helper must report; set it for an image built with another `TOSHI_GUEST_BIN` |
+| `EXPECT_RAILPACK_VERSION` | `RAILPACK_VERSION` from `railpack.env` | the Railpack version the image must pin |
+| `BOOT_TIMEOUT` | `300` | seconds the guest has to report its proof |
+| `SHUTDOWN_TIMEOUT` | `60` | seconds the guest has to power off after the proof |
+| `TERM_GRACE` | `10` | seconds QEMU has to exit after TERM before it is killed |
+| `PROOF_URL` | `https://github.com/` | the URL of the outbound HTTPS request, which must answer 2xx or 3xx |
+| `QEMU_SYSTEM`, `QEMU_IMG`, `PASST` | `qemu-system-x86_64`, `qemu-img`, `passt` | the programs it runs |
+| `KEEP_SERIAL_LOG` | unset | a path to copy the boot's serial log to before it is removed |
 
 ## Update an input
 

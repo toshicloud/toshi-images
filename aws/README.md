@@ -40,6 +40,14 @@ them. The script needs the AWS CLI v2 and `qemu-img`. It prints the AMI ID
 to pass to `toshi tenant hosts add --ami`. The AMI is built by hand today: no
 workflow runs `build-ami.sh`.
 
+Other settings: `IMAGE` (default `$CACHE_DIR/out/ubuntu-24.04.qcow2`, with
+`CACHE_DIR` defaulting to `${XDG_CACHE_HOME:-~/.cache}/toshi-images`),
+`WORK_DIR` (default `$CACHE_DIR/out/aws`), `S3_PREFIX` (default
+`toshi-images`), `AMI_NAME` (default `toshi-ubuntu-24.04-<UTC time>`),
+`VMIMPORT_ROLE` (default `vmimport`), `IMPORT_TIMEOUT` (seconds to wait for
+the snapshot import, default `3600`), and `QEMU_IMG` and `AWS`, the
+programs it runs.
+
 An AMI is regional: build or copy one per region the cloud hosts use
 (`aws ec2 copy-image`).
 
@@ -144,6 +152,16 @@ AWS_REGION=eu-west-1 aws/build-windows-2025.sh
 | `windows-2025.pkr.hcl` | the template: Amazon's newest licence-included Windows Server 2025 base image by name, a temporary instance, the provisioning steps, the AMI's tags, the manifest `windows-2025-ami.json` |
 | `windows-2025/winrm-userdata.txt` | the temporary instance's user data, a template Packer fills in: WinRM over HTTPS with the build's certificate |
 | `windows-2025/provision.ps1` | the wrapper Packer runs on the instance, one step at a time |
+
+`build-windows-2025.sh [build|validate] [packer arguments]` (`-h` prints
+its usage) needs `AWS_REGION`; `TOSHI_VERSION` (default: `git describe` of
+this repository), `PACKER` and `OPENSSL` are optional. It passes the region
+and the version to the template, and further arguments to Packer, for
+example `-var subnet_id=subnet-...`. The template's other variables:
+`instance_type` (default `c7i.2xlarge`), `root_volume_gib` (default `64`),
+`subnet_id` (default empty: the default VPC), `source_ami_name` (default
+`Windows_Server-2025-English-Full-Base-*`, the newest match) and
+`guest_version` (the `toshi:guest-version` tag, default `none`).
 
 Nothing is copied from [`windows-2025`](../windows-2025/): the
 template uploads that directory as it is, and `provision.ps1` gives its

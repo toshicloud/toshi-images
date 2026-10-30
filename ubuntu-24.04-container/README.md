@@ -128,3 +128,8 @@ script as a release. It writes public hashed Rekor v2 entries for the
 digest in that temporary registry. Its verifier accepts only the dispatch's
 exact branch-ref identity, which cannot satisfy a release-tag verifier.
 Only a release tag proves the login and the push to the real registry.
+
+`publish.sh` reads `GITHUB_SHA`, which it requires for `push`: the image's
+revision label must name that commit. `REHEARSE=1` is the rehearsal: the
+registry must be the loopback address with a port, and the version may be
+the commit instead of a release tag.
