@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -88,12 +89,39 @@ class IntentLog:
         # Autocommit: each write below opens its own transaction.
         self._db = sqlite3.connect(path, isolation_level=None)
         try:
-            self._db.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
-            self._db.execute("PRAGMA journal_mode = WAL")
+            self._enable_wal()
             self._write(self._migrate)
         except BaseException:
             self._db.close()
             raise
+
+    def _enable_wal(self) -> None:
+        deadline = time.monotonic() + BUSY_TIMEOUT_MS / 1000
+
+        def set_remaining_timeout() -> None:
+            remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+            self._db.execute(f"PRAGMA busy_timeout = {remaining_ms}")
+
+        while True:
+            try:
+                set_remaining_timeout()
+                (mode,) = self._db.execute("PRAGMA journal_mode").fetchone()
+                if mode != "wal":
+                    set_remaining_timeout()
+                    self._db.execute("PRAGMA journal_mode = WAL").fetchone()
+                self._db.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+                return
+            except sqlite3.OperationalError as err:
+                if getattr(err, "sqlite_errorcode", 0) & 0xFF != sqlite3.SQLITE_BUSY:
+                    raise
+                # A journal-mode lock upgrade can skip SQLite's busy handler to
+                # avoid deadlock, so retry until the same busy timeout expires.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.01, remaining))
+                if time.monotonic() >= deadline:
+                    raise
 
     def _write(self, body: Any) -> Any:
         # BEGIN IMMEDIATE takes the write lock first, so two processes of one
