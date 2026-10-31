@@ -22,7 +22,11 @@ a nested-KVM job that
 boots VMs through the provider needs it on the `PATH`, or the agent refuses to
 start.
 Another `user` entry in `/etc/fstab` lets it mount a job's state volume,
-the disk with serial `toshi-volume`, on `/volume`. A filler's share is a
+the disk with serial `toshi-volume`, on `/volume`. The unit's
+`CAP_SYS_ADMIN` lets toshi-guest freeze that file system before the host
+snapshots a sleeping service's VM; the helper drops its ambient
+capabilities before it starts a runner, a hook or a command, so none of them
+holds it. A filler's share is a
 copy the host puts in `/mnt/toshi-share`, which the runner user owns, and
 the udev rule gives that user the raw disk with serial `toshi-output`, to
 which toshi-guest writes the filler's output.
