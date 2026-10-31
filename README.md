@@ -10,7 +10,7 @@ and a Linux container image, reviewed and versioned like code. There is no macOS
 | [`windows-2025`](windows-2025/README.md) | `windows-2025.qcow2` for the QEMU provider | bash, an answer file and QEMU |
 | [`ubuntu-24.04-container`](ubuntu-24.04-container/README.md) | an OCI image for the container tier | Docker |
 | [`service-agent`](service-agent/README.md) | an OCI image with the agent CLIs and the intent-log library, for an Agent template's services | Docker and npm |
-| [`aws`](aws/README.md) | an AMI from `ubuntu-24.04.qcow2` (`build-ami.sh`), and the Windows Server 2025 AMI of a cloud pool (`build-windows-2025.sh`) | bash and the AWS CLI; Packer and OpenSSL for Windows |
+| [`aws`](aws/README.md) | an AMI from `ubuntu-24.04.qcow2` (`build-ami.sh`), the Windows Server 2025 AMI of a cloud pool (`build-windows-2025.sh`), and the host AMI of a Linux cloud pool (`build-linux-pool-host.sh`) | bash and the AWS CLI; Packer, with OpenSSL for Windows |
 | [`gcp`](gcp/README.md) | a Compute Engine image from `ubuntu-24.04.qcow2` (`build-image.sh`) | bash and gcloud |
 | [`azure`](azure/README.md) | an Azure Compute Gallery image version from `ubuntu-24.04.qcow2` (`build-image.sh`) | bash and the Azure CLI |
 
