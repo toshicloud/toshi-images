@@ -17,8 +17,8 @@
 # The image carries everything a pool host needs except the two files the
 # pool's user data writes, /etc/toshi/enrollment-token and
 # /etc/toshi/agent.toml; the user data then runs
-# `systemctl enable --now toshi-agent.service`. The unit is installed and
-# neither enabled nor started here.
+# `systemctl enable --now toshi-host.service`. The unit is installed and
+# neither enabled nor started here; the network helper's socket is enabled.
 set -euo pipefail
 
 usage() {
@@ -79,10 +79,11 @@ check_pins() {
   [[ "${TOSHI_AGENT_ASSET}" == *_linux_amd64.tar.gz ]] || die "TOSHI_AGENT_ASSET is not a linux_amd64 archive: ${TOSHI_AGENT_ASSET}"
 }
 
-# The agent's image_dir: the pool's agent.toml sets data_dir =
-# /var/lib/toshi-agent and no image_dir, so the default <data_dir>/images
-# applies, and it must exist when the agent starts.
-image_dir=/var/lib/toshi-agent/images
+# The agent's image_dir: the directory the release's tmpfiles.d line
+# creates, the default <data_dir>/images for the default data_dir ./data,
+# which the unit resolves under /var/lib/toshi-host. It must exist when the
+# agent starts.
+image_dir=/var/lib/toshi-host/data/images
 
 plan() {
   cat <<EOF
@@ -90,11 +91,12 @@ base AMI:   ubuntu-noble-24.04-amd64-server-${UBUNTU_SERIAL} (owner ${UBUNTU_AMI
 base Azure: ${AZURE_UBUNTU_PUBLISHER}/${AZURE_UBUNTU_OFFER}/${AZURE_UBUNTU_SKU} ${AZURE_UBUNTU_VERSION}
 packages:   ${HOST_PACKAGES}
 agent:      ${TOSHI_AGENT_ASSET} (${TOSHI_AGENT_VERSION}), sha256 ${TOSHI_AGENT_SHA256}
-  /usr/local/bin/toshi-agent, /usr/local/bin/toshi-agent-pools
-  /etc/systemd/system/toshi-agent.service (installed, not enabled)
+  /usr/local/bin/toshi-host, /usr/local/bin/toshi-host-pools
+  /etc/systemd/system/toshi-host.service (installed, not enabled)
   /etc/sysusers.d/toshi.conf, /etc/tmpfiles.d/toshi.conf (the agent's lines)
   /etc/toshi/mining-pools.txt
-  /etc/nftables.d/toshi-agent.nft, included from /etc/nftables.conf
+  /etc/nftables.d/toshi-host.nft, included from /etc/nftables.conf
+  /etc/systemd/system/toshi-host-netsets.socket (enabled) and toshi-host-netsets.service
 guest:      ${GUEST_REF}@${GUEST_DIGEST} (${GUEST_VERSION})
   ${image_dir}/ubuntu-24.04.qcow2, sha256 ${GUEST_SHA256}
 oras:       ${ORAS_VERSION}, sha256 ${ORAS_SHA256}
@@ -129,8 +131,8 @@ agent_lines() {
   local kind=$1 file=$2
   echo "# The agent's lines of ${kind}/toshi.conf in Toshi ${TOSHI_AGENT_VERSION}."
   case "${kind}" in
-    sysusers.d) awk '!/^#/ && $2 == "toshi-agent"' "${file}" ;;
-    tmpfiles.d) awk '!/^#/ && ($2 == "/etc/toshi" || $2 ~ /^\/(var\/lib|run)\/toshi-agent(\/|$)/)' "${file}" ;;
+    sysusers.d) awk '!/^#/ && $2 == "toshi-host"' "${file}" ;;
+    tmpfiles.d) awk '!/^#/ && ($2 == "/etc/toshi" || $2 ~ /^\/(var\/lib|run)\/toshi-host(\/|$)/)' "${file}" ;;
   esac
 }
 
@@ -150,12 +152,12 @@ install_agent() {
   [[ "${release_guest}" == "${GUEST_VERSION}" && "${release_digest}" == "${GUEST_DIGEST}" && "${release_sha256}" == "${GUEST_SHA256}" ]] ||
     die "the guest pin differs from the one ${TOSHI_AGENT_VERSION} names: ${release_guest} ${release_digest} ${release_sha256}"
 
-  local unit=${rel}/deploy/systemd/toshi-agent.service
-  grep -q '^ExecStart=/usr/local/bin/toshi-agent ' "${unit}" || die "the unit does not run /usr/local/bin/toshi-agent"
+  local unit=${rel}/deploy/systemd/toshi-host.service
+  grep -q '^ExecStart=/usr/local/bin/toshi-host ' "${unit}" || die "the unit does not run /usr/local/bin/toshi-host"
 
-  install -m 0755 "${rel}/toshi-agent" /usr/local/bin/toshi-agent
-  install -m 0755 "${rel}/deploy/nftables/toshi-agent-pools.sh" /usr/local/bin/toshi-agent-pools
-  install -m 0644 "${unit}" /etc/systemd/system/toshi-agent.service
+  install -m 0755 "${rel}/toshi-host" /usr/local/bin/toshi-host
+  install -m 0755 "${rel}/deploy/nftables/toshi-host-pools.sh" /usr/local/bin/toshi-host-pools
+  install -m 0644 "${unit}" /etc/systemd/system/toshi-host.service
   agent_lines sysusers.d "${rel}/deploy/sysusers.d/toshi.conf" >"${rel}/sysusers.conf"
   agent_lines tmpfiles.d "${rel}/deploy/tmpfiles.d/toshi.conf" >"${rel}/tmpfiles.conf"
   # Ubuntu's cloud images ship neither directory.
@@ -168,26 +170,36 @@ install_agent() {
   install -m 0644 "${rel}/deploy/nftables/mining-pools.txt" /etc/toshi/mining-pools.txt
   systemctl daemon-reload
 
-  id -nG toshi-agent | tr ' ' '\n' | grep -qx kvm || die "toshi-agent is not in the group kvm"
-  install -d -o toshi-agent -g toshi-agent -m 0750 "${image_dir}"
-  systemctl is-enabled toshi-agent.service >/dev/null 2>&1 && die "toshi-agent.service is enabled"
-  /usr/local/bin/toshi-agent version
+  id -nG toshi-host | tr ' ' '\n' | grep -qx kvm || die "toshi-host is not in the group kvm"
+  [[ -d "${image_dir}" ]] || die "the release's tmpfiles.d did not create ${image_dir}"
+  systemctl is-enabled toshi-host.service >/dev/null 2>&1 && die "toshi-host.service is enabled"
+  /usr/local/bin/toshi-host version
 }
 
 # The agent's host firewall, loaded at boot by nftables.service; the unit
-# fills its cgroup sets when the agent starts.
+# fills its cgroup sets when the agent starts, and the network helper writes
+# each VM's sets when the agent asks on the helper's socket.
 install_firewall() {
   local rel=$1
   install -d -m 0755 /etc/nftables.d
-  install -m 0644 "${rel}/deploy/nftables/toshi-agent.nft" /etc/nftables.d/toshi-agent.nft
+  install -m 0644 "${rel}/deploy/nftables/toshi-host.nft" /etc/nftables.d/toshi-host.nft
   # The image's table is the release's, byte for byte: nothing else goes
   # into the agent's firewall files.
-  cmp -s "${rel}/deploy/nftables/toshi-agent.nft" /etc/nftables.d/toshi-agent.nft ||
-    die "/etc/nftables.d/toshi-agent.nft differs from the release's"
-  local line='include "/etc/nftables.d/toshi-agent.nft"'
+  cmp -s "${rel}/deploy/nftables/toshi-host.nft" /etc/nftables.d/toshi-host.nft ||
+    die "/etc/nftables.d/toshi-host.nft differs from the release's"
+  local line='include "/etc/nftables.d/toshi-host.nft"'
   grep -qxF "${line}" /etc/nftables.conf || echo "${line}" >>/etc/nftables.conf
   nft -c -f /etc/nftables.conf
   systemctl enable nftables.service
+
+  # The network helper: socket-activated, so enabling the socket is enough
+  # for the helper to start on the agent's first request.
+  local helper=${rel}/deploy/systemd/toshi-host-netsets.service
+  grep -q '^ExecStart=/usr/local/bin/toshi-host netsets ' "${helper}" ||
+    die "the network helper unit does not run /usr/local/bin/toshi-host netsets"
+  install -m 0644 "${rel}/deploy/systemd/toshi-host-netsets.socket" "${helper}" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable toshi-host-netsets.socket
 }
 
 install_guest() {
@@ -210,7 +222,7 @@ install_guest() {
   done
   check_sha256 "${pull}/ubuntu-24.04.qcow2" "${GUEST_SHA256}"
   bash "${dir}/install.sh" "${pull}/ubuntu-24.04.qcow2" --image-dir "${image_dir}" \
-    --owner toshi-agent:toshi-agent --mode 0640
+    --owner toshi-host:toshi-host --mode 0640
   rm -rf "${pull}"
 }
 
@@ -261,7 +273,7 @@ build() {
   mkdir "${work}/release"
   step "installing the agent ${TOSHI_AGENT_VERSION}"
   install_agent "${work}/release"
-  step "installing the firewall"
+  step "installing the firewall and the network helper"
   install_firewall "${work}/release"
   step "installing the guest image ${GUEST_VERSION}"
   install_guest "${work}"

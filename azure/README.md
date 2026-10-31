@@ -137,7 +137,7 @@ A Packer template that builds the Compute Gallery image version a Linux
 cloud pool's host boots on Azure: Ubuntu 24.04 with the Toshi agent, QEMU,
 passt, OVMF, nftables and the guest image `ubuntu-24.04`. The pool's user
 data writes `/etc/toshi/enrollment-token` and `/etc/toshi/agent.toml` and
-runs `systemctl enable --now toshi-agent.service`; the image holds
+runs `systemctl enable --now toshi-host.service`; the image holds
 everything else.
 
 ```sh
