@@ -4,9 +4,10 @@ Wants=dev-virtio\x2dports-toshi.guest.device
 After=dev-virtio\x2dports-toshi.guest.device
 StartLimitIntervalSec=0
 # On EC2, toshi-guest-userdata.service runs the runner instead;
-# on GCE, toshi-guest-gce.service.
+# on GCE, toshi-guest-gce.service; on Azure, toshi-guest-azure.service.
 ConditionVirtualization=!amazon
 ConditionVirtualization=!google
+ConditionVirtualization=!microsoft
 
 [Service]
 User=runner

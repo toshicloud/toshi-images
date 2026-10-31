@@ -1,0 +1,25 @@
+[Unit]
+Description=Toshi runner from Azure instance metadata
+# Only an Azure virtual machine of a cloud host; in a Toshi VM
+# toshi-guest.service talks to the host over the serial port instead. A
+# Linux Toshi VM never shows Hyper-V to its guest, so it never matches.
+ConditionVirtualization=microsoft
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+# Root: it blocks the instance metadata service and the Azure host address
+# for other users, arms the shutdown and writes the egress address to
+# /dev/ttyS0, which Azure's boot diagnostics capture. The runner runs as
+# runner.
+User=root
+EnvironmentFile=/etc/environment
+WorkingDirectory=/opt/actions-runner
+ExecStart=/usr/local/bin/toshi-guest userdata --source azure
+# The runner is read once: no restart.
+Restart=no
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

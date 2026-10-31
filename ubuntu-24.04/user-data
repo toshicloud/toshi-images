@@ -50,6 +50,8 @@ write_files:
       install -m0644 /mnt/seed/toshi-guest-userdata.service /etc/systemd/system/toshi-guest-userdata.service
       # On GCE it comes from the instance metadata.
       install -m0644 /mnt/seed/toshi-guest-gce.service /etc/systemd/system/toshi-guest-gce.service
+      # On Azure, from the instance metadata too.
+      install -m0644 /mnt/seed/toshi-guest-azure.service /etc/systemd/system/toshi-guest-azure.service
       mkdir -p /opt/actions-runner
       tar xzf /mnt/seed/actions-runner-linux-x64.tar.gz -C /opt/actions-runner
       chown -R runner:runner /opt/actions-runner
@@ -99,7 +101,7 @@ write_files:
       systemctl disable docker.service
       systemctl enable docker.socket
       systemctl daemon-reload
-      systemctl enable toshi-guest.service toshi-guest-userdata.service toshi-guest-gce.service
+      systemctl enable toshi-guest.service toshi-guest-userdata.service toshi-guest-gce.service toshi-guest-azure.service
       DEBIAN_FRONTEND=noninteractive apt-get purge -y unattended-upgrades
       systemctl mask apt-daily.timer apt-daily-upgrade.timer systemd-networkd-wait-online.service
       # toshi-guest starts its own sshd, as the runner user, only for a
