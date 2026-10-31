@@ -21,6 +21,7 @@ import { isDeepStrictEqual } from "node:util";
 export const DEFAULT_PATH = "/volume/.toshi/intents.db";
 export const SCHEMA_VERSION = 1;
 export const BUSY_TIMEOUT_MS = 5000;
+const SQLITE_BUSY = 5;
 
 export type Scope = "run" | "workload";
 export const SCOPE_VARIABLES: Record<Scope, string> = {
@@ -78,12 +79,51 @@ export class IntentLog {
 		this.#env = env;
 		this.#db = new DatabaseSync(path);
 		try {
-			this.#db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
-			this.#db.exec("PRAGMA journal_mode = WAL");
+			this.#enableWal();
 			this.#write(() => this.#migrate());
 		} catch (err) {
 			this.#db.close();
 			throw err;
+		}
+	}
+
+	#enableWal(): void {
+		const deadline = performance.now() + BUSY_TIMEOUT_MS;
+		const setRemainingTimeout = () => {
+			const remaining = Math.max(0, Math.floor(deadline - performance.now()));
+			this.#db.exec(`PRAGMA busy_timeout = ${remaining}`);
+		};
+		const sleeper = new Int32Array(new SharedArrayBuffer(4));
+		for (;;) {
+			try {
+				setRemainingTimeout();
+				const { journal_mode: mode } = this.#db
+					.prepare("PRAGMA journal_mode")
+					.get() as { journal_mode: string };
+				if (mode !== "wal") {
+					setRemainingTimeout();
+					this.#db.exec("PRAGMA journal_mode = WAL");
+				}
+				this.#db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+				return;
+			} catch (err) {
+				if (
+					!(err instanceof Error) ||
+					!("code" in err) ||
+					err.code !== "ERR_SQLITE_ERROR" ||
+					!("errcode" in err) ||
+					typeof err.errcode !== "number" ||
+					(err.errcode & 0xff) !== SQLITE_BUSY
+				) {
+					throw err;
+				}
+				// A journal-mode lock upgrade can skip SQLite's busy handler to
+				// avoid deadlock, so retry until the same busy timeout expires.
+				const remaining = deadline - performance.now();
+				if (remaining <= 0) throw err;
+				Atomics.wait(sleeper, 0, 0, Math.min(10, remaining));
+				if (performance.now() >= deadline) throw err;
+			}
 		}
 	}
 
