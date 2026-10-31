@@ -151,6 +151,14 @@ jobs:
           TOSHI_VERSION: ci
         run: aws/build-linux-pool-host.sh validate
 
+      # The Azure pool host image is built by hand in a subscription
+      # (azure/README.md); validate also runs provision.sh plan.
+      - name: Validate the Azure Linux pool host template
+        env:
+          CHECKPOINT_DISABLE: "1"
+          TOSHI_VERSION: ci
+        run: azure/build-linux-pool-host.sh validate
+
   ubuntu-24-04:
     needs: changed
     if: needs.changed.outputs.run == 'true'

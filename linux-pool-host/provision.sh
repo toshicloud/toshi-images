@@ -7,7 +7,8 @@
 #   provision.sh seal <cloud> [dir]  clear what must not be in the image
 #
 # <cloud> is aws or azure, the cloud of the template that runs this script.
-# build is the same on both; seal is not.
+# build is the same on both, with a read-only check of Azure's base image;
+# seal differs.
 #
 # <dir> (default: this script's directory) holds versions.env, install.sh
 # and the agent archive named in TOSHI_AGENT_ASSET; the template uploads
@@ -66,7 +67,8 @@ source "${dir}/versions.env"
 
 check_pins() {
   local name value
-  for name in UBUNTU_SERIAL TOSHI_AGENT_VERSION TOSHI_AGENT_ASSET GUEST_VERSION GUEST_REF ORAS_URL HOST_PACKAGES; do
+  for name in UBUNTU_SERIAL AZURE_UBUNTU_PUBLISHER AZURE_UBUNTU_OFFER AZURE_UBUNTU_SKU AZURE_UBUNTU_VERSION \
+    TOSHI_AGENT_VERSION TOSHI_AGENT_ASSET GUEST_VERSION GUEST_REF ORAS_URL HOST_PACKAGES; do
     [[ -n "${!name:-}" ]] || die "${name} is empty in versions.env"
   done
   for name in TOSHI_AGENT_SHA256 GUEST_SHA256 ORAS_SHA256; do
@@ -85,6 +87,7 @@ image_dir=/var/lib/toshi-agent/images
 plan() {
   cat <<EOF
 base AMI:   ubuntu-noble-24.04-amd64-server-${UBUNTU_SERIAL} (owner ${UBUNTU_AMI_OWNER})
+base Azure: ${AZURE_UBUNTU_PUBLISHER}/${AZURE_UBUNTU_OFFER}/${AZURE_UBUNTU_SKU} ${AZURE_UBUNTU_VERSION}
 packages:   ${HOST_PACKAGES}
 agent:      ${TOSHI_AGENT_ASSET} (${TOSHI_AGENT_VERSION}), sha256 ${TOSHI_AGENT_SHA256}
   /usr/local/bin/toshi-agent, /usr/local/bin/toshi-agent-pools
@@ -211,7 +214,37 @@ install_guest() {
   rm -rf "${pull}"
 }
 
+# The Azure base image must keep the Azure datasource and walinuxagent's
+# provisioning settings: the build changes the image only by adding the
+# agent, and a pool's VM boots it as Canonical ships it. Read-only.
+check_azure_base() {
+  local file found=0
+  for file in /etc/cloud/cloud.cfg.d/*; do
+    [[ -f "${file}" ]] || continue
+    if grep -Eq '^[[:space:]]*datasource_list:.*Azure' "${file}"; then
+      found=1
+      break
+    fi
+  done
+  [[ ${found} -eq 1 ]] || die "no datasource_list in /etc/cloud/cloud.cfg.d/ names Azure"
+
+  grep -Eq '^Provisioning\.Agent=(auto|cloud-init)$' /etc/waagent.conf ||
+    die "/etc/waagent.conf does not leave provisioning to cloud-init"
+  grep -qx 'OS.EnableFirewall=y' /etc/waagent.conf ||
+    die "/etc/waagent.conf does not set OS.EnableFirewall=y"
+
+  # The agent reads the upstream resolver from systemd-resolved's file and
+  # leaves resolv.conf alone; the image keeps Canonical's symlink to the
+  # stub.
+  local resolv=/etc/resolv.conf
+  if [[ "$(readlink "${resolv}")" != "../run/systemd/resolve/stub-resolv.conf" &&
+    "$(readlink -f "${resolv}")" != /run/systemd/resolve/stub-resolv.conf ]]; then
+    die "${resolv} does not resolve to systemd-resolved's stub"
+  fi
+}
+
 build() {
+  local cloud=$1
   [[ ${EUID} -eq 0 ]] || die "build runs as root"
   # The agent delegates its cgroup to its VMs: cgroup v2 only.
   [[ -f /sys/fs/cgroup/cgroup.controllers ]] || die "this system does not run cgroup v2"
@@ -233,6 +266,11 @@ build() {
   step "installing the guest image ${GUEST_VERSION}"
   install_guest "${work}"
 
+  if [[ "${cloud}" == azure ]]; then
+    step "checking the Azure base image"
+    check_azure_base
+  fi
+
   local cmd
   for cmd in qemu-system-x86_64 qemu-img passt nft; do
     command -v "${cmd}" >/dev/null || die "${cmd} not found"
@@ -252,14 +290,25 @@ seal_aws() {
   rm -rf "${dir}"
 }
 
+seal_azure() {
+  [[ ${EUID} -eq 0 ]] || die "seal runs as root"
+  step "sealing"
+  apt-get clean
+  # A fresh instance gets a new machine id and its own cloud-init run. The
+  # template's last step, waagent -deprovision+user, removes the build's
+  # user, its keys and the SSH host keys; this script does not touch them.
+  cloud-init clean --logs --machine-id
+  rm -rf "${dir}"
+}
+
 check_pins
 case "${action}" in
   plan) plan ;;
-  build) build ;;
+  build) build "${cloud}" ;;
   seal)
     case "${cloud}" in
       aws) seal_aws ;;
-      *) die "seal ${cloud} is not implemented yet" ;;
+      azure) seal_azure ;;
     esac
     ;;
   *) usage ;;
