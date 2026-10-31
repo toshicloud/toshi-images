@@ -131,7 +131,7 @@ mise exec -- ubuntu-24.04/build.sh
 ```
 
 The image gets the guest helper pinned in [`guest.env`](../guest.env), or the
-one `TOSHI_GUEST_BIN` names (see [The guest helper](../README.md#the-guest-helper)).
+one `TOSHI_GUEST_BIN` names (see [The guest helper](../docs/guest-helper.md)).
 Either way the build prints the guest's version, the one the image's VMs
 report, and warns when it is `dev` (built without a version).
 
