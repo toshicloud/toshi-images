@@ -14,7 +14,10 @@ Group=runner
 # CAP_NET_BIND_SERVICE: the helper answers the bound-service names on
 # 127.84.0.1 port 53, and listens at a bound channel's port, which may be
 # below 1024.
-AmbientCapabilities=CAP_SYS_TIME CAP_NET_BIND_SERVICE
+# CAP_SYS_ADMIN: the helper freezes the state volume's file system before a
+# snapshot of a sleeping service's VM, and clears its ambient set before it
+# starts any workload process, so no runner, hook or command inherits it.
+AmbientCapabilities=CAP_SYS_TIME CAP_NET_BIND_SERVICE CAP_SYS_ADMIN
 WorkingDirectory=/opt/actions-runner
 ExecStart=/usr/local/bin/toshi-guest run --transport serial:/dev/virtio-ports/toshi.guest
 Restart=on-failure
