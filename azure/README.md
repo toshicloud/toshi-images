@@ -8,6 +8,10 @@ serial-port unit (`ConditionVirtualization=microsoft`, and
 `ConditionVirtualization=!microsoft` on `toshi-guest.service`), which reads
 the runner from the instance metadata service.
 
+The directory also holds a second, separate image: the host image of a
+Linux cloud pool, built with Packer (see
+[The Linux pool host image](#the-linux-pool-host-image)).
+
 ## Steps
 
 1. Create the image definition `toshi-ubuntu-2404` in the gallery if it is
@@ -126,3 +130,133 @@ The identity that builds the image needs:
   (`169.254.169.254`) and the Azure host address (`168.63.129.16`) for
   every user but root and for every container on a Docker bridge, except
   DNS on port 53, before the runner starts. The image opens neither.
+
+## The Linux pool host image
+
+A Packer template that builds the Compute Gallery image version a Linux
+cloud pool's host boots on Azure: Ubuntu 24.04 with the Toshi agent, QEMU,
+passt, OVMF, nftables and the guest image `ubuntu-24.04`. The pool's user
+data writes `/etc/toshi/enrollment-token` and `/etc/toshi/agent.toml` and
+runs `systemctl enable --now toshi-agent.service`; the image holds
+everything else.
+
+```sh
+AZURE_SUBSCRIPTION_ID=<id> AZURE_GALLERY_RESOURCE_GROUP=<rg> \
+  AZURE_GALLERY=<gallery> AZURE_LOCATION=westeurope IMAGE_VERSION=1.0.0 \
+  azure/build-linux-pool-host.sh
+```
+
+The provisioner and the pins are shared with the AWS host AMI; see
+[linux-pool-host/README.md](../linux-pool-host/README.md) for what they do
+and for the contract table of both images.
+
+| File | What it is |
+|---|---|
+| `build-linux-pool-host.sh` | what an operator runs: gets the agent archive and checks its SHA-256, ensures the gallery's image definition, runs `packer init` and `packer build`, and prints the version id and the build time |
+| `linux-pool-host.pkr.hcl` | the template: Canonical's pinned Ubuntu 24.04 Azure image, a temporary build VM, the shared provisioning, the gallery destination, the manifest `linux-pool-host.json` |
+| `ci.pkrvars.hcl` | placeholder values for `validate`, which needs no Azure account |
+
+### linux-pool-host.pkr.hcl
+
+The template builds one gallery image version. Where each property of it is
+set:
+
+| Property | Value | Set by |
+|---|---|---|
+| OS state | Generalized | the image definition (`--os-state Generalized`). The build ends with `waagent -force -deprovision+user`, and Packer generalizes and captures the image |
+| Hyper-V generation | V2 | the image definition (`--hyper-v-generation V2`) |
+| Architecture | x64 | the image definition (`--architecture x64`) |
+| Security type | Standard | the template sets no `security_type`, which the plugin only accepts as TrustedLaunch or ConfidentialVM; the definition carries the `SecurityType=Standard` feature |
+| Disk controllers | SCSI and NVMe | the definition's `DiskControllerTypes=SCSI,NVMe`: a v5 size exposes the OS disk as `/dev/sda1` on SCSI, a v6 size as `/dev/nvme0n1p1` on NVMe. Canonical's `/etc/fstab` mounts by label/UUID, so either boots |
+| Replication | one replica, in `location` | `shared_image_gallery_destination` with `target_region { name = location }` and `Standard_LRS` |
+
+The script creates the image definition when the gallery has none, and
+refuses an existing one that is not Gen2, Generalized and x64 with
+`SecurityType` Standard or absent:
+
+```sh
+az sig image-definition create -g <rg> --gallery-name <gallery> \
+  --gallery-image-definition linux-pool-host \
+  --publisher toshi --offer linux-pool-host --sku ubuntu-24.04 \
+  --os-type Linux --os-state Generalized --hyper-v-generation V2 \
+  --architecture x64 \
+  --features "SecurityType=Standard DiskControllerTypes=SCSI,NVMe"
+```
+
+#### Prerequisites
+
+- A Compute Gallery in `AZURE_GALLERY_RESOURCE_GROUP`, and an image
+  definition named `linux-pool-host` (or `AZURE_IMAGE_NAME`). The script
+  creates the definition when it is absent; it does not create the gallery.
+- The identity that runs the build needs to create and delete a temporary
+  resource group with a VM, a disk and a network in the subscription, or
+  Contributor in `AZURE_BUILD_RESOURCE_GROUP` when that is set, and to
+  write the image version and read and write the definition in the
+  gallery's resource group. Packer deletes the temporary resource group
+  when the build ends.
+- Outbound network from the build VM, for the Ubuntu archive, the guest
+  image registry and the agent archive.
+
+#### What the script needs
+
+`build` requires `AZURE_SUBSCRIPTION_ID`, `AZURE_GALLERY_RESOURCE_GROUP`,
+`AZURE_GALLERY`, `AZURE_LOCATION` and `IMAGE_VERSION` (X.Y.Z).
+
+Optional:
+
+- `AZURE_BUILD_RESOURCE_GROUP`: an existing resource group to build in.
+  Empty (the default) creates a temporary one in `AZURE_LOCATION`; the
+  template passes the location only in that case, because the plugin
+  refuses both.
+- `AZURE_IMAGE_NAME` (default `linux-pool-host`), `VM_SIZE` (default
+  `Standard_D4s_v5`; Dsv5 sizes support nested virtualisation, though the
+  build runs no VM), `OS_DISK_SIZE_GB` (default 30, from 16 to 64).
+- `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` and `AZURE_TENANT_ID`: a service
+  principal. Set all three or none; with none, Packer uses the Azure CLI's
+  login. The script passes them to Packer through `PKR_VAR_*`, so the
+  secret stays out of the process list.
+- `AGENT_TARBALL`: the agent archive `linux-pool-host/versions.env` pins.
+  Without it the script downloads it with the GitHub CLI from
+  `AGENT_REPOSITORY`.
+- `TOSHI_VERSION` (default `git describe` of this repository), `PACKER`,
+  `AZ`, `GH`.
+
+Further arguments go to Packer, for example
+`-var vm_size=Standard_D8s_v5`.
+
+#### Checking the definition and the version
+
+```sh
+az sig image-definition show -g <rg> --gallery-name <gallery> \
+  --gallery-image-definition linux-pool-host \
+  --query '{gen:hyperVGeneration,os:osState,arch:architecture,features:features}'
+az sig image-version show -g <rg> --gallery-name <gallery> \
+  --gallery-image-definition linux-pool-host --gallery-image-version 1.0.0
+```
+
+The build prints the version's resource id and the `show` command when it
+ends.
+
+#### Checking it without an account
+
+CI (`lint` in `.github/workflows/images.yml`) runs the template's
+validation, which needs no Azure account and no agent archive:
+
+```sh
+azure/build-linux-pool-host.sh validate
+```
+
+It runs `packer init`, `packer fmt -check` and `packer validate` with
+`ci.pkrvars.hcl`, then `provision.sh plan`. The build itself has not run
+yet: it needs a subscription, the gallery and the rights above.
+
+### 168.63.129.16
+
+On the host, `walinuxagent` and cloud-init run as root and talk to Azure's
+WireServer at `168.63.129.16`; systemd-resolved and DHCP use the same
+address for DNS. A job's VM is not on that path: its traffic leaves as the
+agent's user, and the agent's rule files allow only DNS to
+`168.63.129.16`. The image adds no rule, route, sysctl or `waagent.conf`
+change for the address. It keeps Canonical's `waagent.conf` and its
+`/etc/resolv.conf` symlink to systemd-resolved's stub, and the build
+checks both.

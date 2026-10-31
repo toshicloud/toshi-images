@@ -35,7 +35,10 @@ named in `TOSHI_AGENT_ASSET`, which the template uploads there.
   lines, `/etc/toshi/mining-pools.txt` and the agent's firewall table;
 - it pulls the guest image by digest with ORAS, checks its SHA-256 and
   installs it with `install.sh`;
-- it checks that QEMU, `qemu-img`, passt, nft and OVMF are in place.
+- it checks that QEMU, `qemu-img`, passt, nft and OVMF are in place;
+- on Azure it also reads the base image's `datasource_list`, its
+  `waagent.conf` settings and its `resolv.conf` symlink, and refuses a base
+  image that differs from Canonical's.
 
 `seal` differs by cloud. On AWS it clears cloud-init's state and logs, the
 machine id, the SSH host keys and the build's key. On Azure it clears

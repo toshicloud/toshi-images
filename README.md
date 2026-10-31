@@ -12,7 +12,7 @@ and a Linux container image, reviewed and versioned like code. There is no macOS
 | [`service-agent`](service-agent/README.md) | an OCI image with the agent CLIs and the intent-log library, for an Agent template's services | Docker and npm |
 | [`aws`](aws/README.md) | an AMI from `ubuntu-24.04.qcow2` (`build-ami.sh`), the Windows Server 2025 AMI of a cloud pool (`build-windows-2025.sh`), and the host AMI of a Linux cloud pool (`build-linux-pool-host.sh`) | bash and the AWS CLI; Packer, with OpenSSL for Windows |
 | [`gcp`](gcp/README.md) | a Compute Engine image from `ubuntu-24.04.qcow2` (`build-image.sh`) | bash and gcloud |
-| [`azure`](azure/README.md) | an Azure Compute Gallery image version from `ubuntu-24.04.qcow2` (`build-image.sh`) | bash and the Azure CLI |
+| [`azure`](azure/README.md) | an Azure Compute Gallery image version from `ubuntu-24.04.qcow2` (`build-image.sh`), and the host image of a Linux cloud pool (`build-linux-pool-host.sh`) | bash and the Azure CLI; Packer for the pool host |
 
 The [`toolsets/`](toolsets/) directory holds shared Bash install scripts and
 `versions.env` pins for the toolsets `TOOLSETS` lists there: Python, Node,
