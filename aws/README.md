@@ -266,7 +266,7 @@ A Packer template that builds the AMI a Linux cloud pool's host boots:
 Ubuntu 24.04 with the Toshi agent, QEMU, passt, OVMF, nftables and the
 guest image `ubuntu-24.04`. The pool's user data writes
 `/etc/toshi/enrollment-token` and `/etc/toshi/agent.toml` and runs
-`systemctl enable --now toshi-agent.service`; the image holds everything
+`systemctl enable --now toshi-host.service`; the image holds everything
 else.
 
 ```sh
@@ -298,24 +298,26 @@ its usage) needs `AWS_REGION`. Optional:
 
 ### What the image holds
 
-- The agent at `/usr/local/bin/toshi-agent` and its unit at
-  `/etc/systemd/system/toshi-agent.service`, both from the release
+- The agent at `/usr/local/bin/toshi-host` and its unit at
+  `/etc/systemd/system/toshi-host.service`, both from the release
   archive. The unit is installed and neither enabled nor started; there is
   no `/etc/toshi/agent.toml` until the user data writes it.
-- The user and group `toshi-agent`, in the group `kvm`, and the directories
-  `/etc/toshi` and `/var/lib/toshi-agent`, from the agent's lines of the
-  release's `sysusers.d` and `tmpfiles.d` files, and the agent's image
-  directory `/var/lib/toshi-agent/images` (the default under the
-  `data_dir` the pool's user data sets).
-- The host firewall `/etc/nftables.d/toshi-agent.nft`, included from
+- The user and group `toshi-host`, in the group `kvm`, and the directories
+  `/etc/toshi` and `/var/lib/toshi-host`, from the agent's lines of the
+  release's `sysusers.d` and `tmpfiles.d` files, which also create the
+  agent's image directory `/var/lib/toshi-host/data/images` (the default
+  `image_dir` for the default `data_dir`).
+- The host firewall `/etc/nftables.d/toshi-host.nft`, included from
   `/etc/nftables.conf` and loaded by `nftables.service`, with
-  `toshi-agent-pools` and `/etc/toshi/mining-pools.txt`, which fill its
-  sets when the agent starts.
+  `toshi-host-pools` and `/etc/toshi/mining-pools.txt`, which fill its
+  sets when the agent starts, and the network helper
+  `toshi-host-netsets.socket` (enabled) and `toshi-host-netsets.service`,
+  which writes each VM's sets when the agent asks.
 - `qemu-system-x86`, `qemu-utils`, `passt`, `ovmf` and `nftables` from the
   Ubuntu archive. The guest boots with SeaBIOS; OVMF is there for
-  `toshi-agent doctor`.
+  `toshi-host doctor`.
 - The guest image `ubuntu-24.04` as
-  `/var/lib/toshi-agent/images/ubuntu-24.04.qcow2` with its line in
+  `/var/lib/toshi-host/data/images/ubuntu-24.04.qcow2` with its line in
   `SHA256SUMS`, installed with [`install.sh`](../install.sh). The guest is
   the one the agent release names in its `deploy/images.env`; `provision.sh`
   stops when `versions.env` pins another, so the agent and the guest move
@@ -335,12 +337,10 @@ The tags on the AMI and its snapshot: `Name`, `toshi:image`
 
 ### The agent release
 
-`versions.env` pins Toshi v0.1.0-rc.3 and the guest image it names,
-toshi-images v0.1.6. That release has no network helper
-(`toshi-agent-netsets`), so its agent does not enforce the per-VM egress
-sets; the firewall table and the cgroup sets the unit fills at start are
-enforced. Move the pin to the first Toshi release after v0.1.0-rc.3 before
-a production pool uses this AMI.
+`versions.env` pins Toshi v0.1.0-rc.4 and the guest image it names,
+toshi-images v0.1.21. The release carries the network helper
+(`toshi-host-netsets`), so the agent enforces the per-VM egress sets as
+well as the firewall table and the cgroup sets the unit fills at start.
 
 ### IAM
 
