@@ -1,0 +1,9 @@
+# Tools for the service agent's libraries and their checks. Node is the
+# version toolsets/versions.env installs in the runner images. mise takes
+# each download's URL and SHA-256 from mise.lock; after a change here,
+# refresh it with `mise lock` in this directory.
+[tools]
+node = "24.22.1"
+python = "3.13.18"
+"aqua:astral-sh/ruff" = "0.17.3"
+"aqua:biomejs/biome" = "2.6.4"
