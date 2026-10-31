@@ -1,8 +1,10 @@
 # aws
 
-Two image paths for EC2: `build-ami.sh`, which turns the Ubuntu image into
-an AMI for a cloud host, and `windows-2025.pkr.hcl`, which builds the
-Windows AMI of a cloud pool ([below](#windows-2025pkrhcl)).
+Three image paths for EC2: `build-ami.sh`, which turns the Ubuntu image into
+an AMI for a cloud host, `windows-2025.pkr.hcl`, which builds the
+Windows AMI of a cloud pool ([below](#windows-2025pkrhcl)), and
+`linux-pool-host.pkr.hcl`, which builds the AMI a Linux cloud pool's host
+boots ([below](#linux-pool-hostpkrhcl)).
 
 ## build-ami.sh
 
@@ -257,3 +259,107 @@ importing the certificate and its listener presenting it, Packer
 connecting by the public DNS name and accepting it, the installs under an Administrator session instead of the
 `runner` logon of the local build, the Dev Drive proof, the EC2Launch
 reset, the seal and the AMI itself.
+
+## linux-pool-host.pkr.hcl
+
+A Packer template that builds the AMI a Linux cloud pool's host boots:
+Ubuntu 24.04 with the Toshi agent, QEMU, passt, OVMF, nftables and the
+guest image `ubuntu-24.04`. The pool's user data writes
+`/etc/toshi/enrollment-token` and `/etc/toshi/agent.toml` and runs
+`systemctl enable --now toshi-agent.service`; the image holds everything
+else.
+
+```sh
+AWS_REGION=eu-west-1 aws/build-linux-pool-host.sh
+```
+
+| File | What it is |
+|---|---|
+| `build-linux-pool-host.sh` | what an operator runs: gets the agent archive and checks its SHA-256, then runs `packer init` and `packer build`, and prints the AMI id, the region and the build time |
+| `linux-pool-host.pkr.hcl` | the template: Canonical's Ubuntu 24.04 AMI of the pinned serial, a temporary instance reached over SSH, the provisioning, the AMI's tags and sharing, the manifest `linux-pool-host-ami.json` |
+| [`../linux-pool-host/versions.env`](../linux-pool-host/versions.env) | the pins, shared with the Azure image: the Ubuntu serial, the agent release and its archive's SHA-256, the guest image that release names, ORAS, the packages |
+| [`../linux-pool-host/provision.sh`](../linux-pool-host/provision.sh) | what Packer runs on the instance as root: `build aws`, then `seal aws`; `plan` prints what `build` installs |
+| `linux-pool-host/iam-policy.json` | the permissions of the user or role that runs the build |
+
+The provisioner and the pins are shared with every cloud; this template runs
+`provision.sh build aws` and `provision.sh seal aws`, and
+[linux-pool-host/](../linux-pool-host/README.md) describes what they do.
+
+`build-linux-pool-host.sh [build|validate] [packer arguments]` (`-h` prints
+its usage) needs `AWS_REGION`. Optional:
+
+- `AGENT_TARBALL`: the agent archive `versions.env` names
+  (`toshi_<version>_linux_amd64.tar.gz` of a Toshi release). Without it the
+  script downloads it with the GitHub CLI from `AGENT_REPOSITORY`.
+- `SHARE_WITH`: comma-separated account ids that may launch the AMI; the
+  AMI and its snapshot are shared with them, as `build-ami.sh` does.
+- `TOSHI_VERSION` (default: `git describe` of this repository), `PACKER`,
+  `GH`.
+
+### What the image holds
+
+- The agent at `/usr/local/bin/toshi-agent` and its unit at
+  `/etc/systemd/system/toshi-agent.service`, both from the release
+  archive. The unit is installed and neither enabled nor started; there is
+  no `/etc/toshi/agent.toml` until the user data writes it.
+- The user and group `toshi-agent`, in the group `kvm`, and the directories
+  `/etc/toshi` and `/var/lib/toshi-agent`, from the agent's lines of the
+  release's `sysusers.d` and `tmpfiles.d` files, and the agent's image
+  directory `/var/lib/toshi-agent/images` (the default under the
+  `data_dir` the pool's user data sets).
+- The host firewall `/etc/nftables.d/toshi-agent.nft`, included from
+  `/etc/nftables.conf` and loaded by `nftables.service`, with
+  `toshi-agent-pools` and `/etc/toshi/mining-pools.txt`, which fill its
+  sets when the agent starts.
+- `qemu-system-x86`, `qemu-utils`, `passt`, `ovmf` and `nftables` from the
+  Ubuntu archive. The guest boots with SeaBIOS; OVMF is there for
+  `toshi-agent doctor`.
+- The guest image `ubuntu-24.04` as
+  `/var/lib/toshi-agent/images/ubuntu-24.04.qcow2` with its line in
+  `SHA256SUMS`, installed with [`install.sh`](../install.sh). The guest is
+  the one the agent release names in its `deploy/images.env`; `provision.sh`
+  stops when `versions.env` pins another, so the agent and the guest move
+  together. The Actions runner is inside the guest, at
+  `/opt/actions-runner`.
+
+The host itself needs cgroup v2, which the build checks, and nested
+virtualisation for `/dev/kvm`, which the build instance does not need: a
+pool launches the AMI with `NestedVirtualization=enabled` on an instance
+type that supports it (M7i, C7i and later Intel families). The seal clears
+cloud-init's state and logs, the machine id, the SSH host keys and the
+build's key.
+
+The tags on the AMI and its snapshot: `Name`, `toshi:image`
+(`linux-pool-host`), `toshi:version`, `toshi:agent-version`,
+`toshi:guest-version`, `toshi:ubuntu-serial` and `toshi:built`.
+
+### The agent release
+
+`versions.env` pins Toshi v0.1.0-rc.3 and the guest image it names,
+toshi-images v0.1.6. That release has no network helper
+(`toshi-agent-netsets`), so its agent does not enforce the per-VM egress
+sets; the firewall table and the cgroup sets the unit fills at start are
+enforced. Move the pin to the first Toshi release after v0.1.0-rc.3 before
+a production pool uses this AMI.
+
+### IAM
+
+The user or role that runs the build needs
+[`linux-pool-host/iam-policy.json`](linux-pool-host/iam-policy.json): Packer
+starts and stops the temporary instance, makes its key pair and security
+group, creates the image and its snapshot, tags them and, with
+`SHARE_WITH`, shares them. No bucket and no service role are involved.
+
+### Checking it without an account
+
+CI (`lint` in `.github/workflows/images.yml`) runs `packer validate` on the
+template and `provision.sh plan`, which need no credentials and start
+nothing:
+
+```sh
+AWS_REGION=eu-west-1 aws/build-linux-pool-host.sh validate
+linux-pool-host/provision.sh plan
+```
+
+`validate` needs no agent archive: without `AGENT_TARBALL` it passes an
+empty file in its place.

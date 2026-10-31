@@ -142,6 +142,15 @@ jobs:
             -var winrm_certificate_pfx=Y2k= -var winrm_certificate_password=ci \
             aws/windows-2025.pkr.hcl
 
+      # The Linux pool host AMI is built by hand with an AWS account
+      # (aws/README.md); validate also runs provision.sh plan.
+      - name: Validate the Linux pool host template
+        env:
+          CHECKPOINT_DISABLE: "1"
+          AWS_REGION: eu-west-1
+          TOSHI_VERSION: ci
+        run: aws/build-linux-pool-host.sh validate
+
   ubuntu-24-04:
     needs: changed
     if: needs.changed.outputs.run == 'true'
