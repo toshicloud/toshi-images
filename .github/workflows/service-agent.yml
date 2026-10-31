@@ -1,0 +1,63 @@
+name: service-agent
+
+# Checks the service agent's intent-log libraries (service-agent/README.md):
+# ruff and biome, the Python and TypeScript suites, each of which also runs
+# the other language's command line on a log it wrote. Nothing is built or
+# published.
+on:
+  pull_request:
+    paths:
+      - service-agent/**
+      - .github/workflows/service-agent.yml
+  push:
+    branches: [main]
+    paths:
+      - service-agent/**
+      - .github/workflows/service-agent.yml
+
+# A job has only the permissions it names.
+permissions: {}
+
+jobs:
+  libraries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: service-agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the tools service-agent/mise.toml pins; mise checks every
+      # archive it fetches against service-agent/mise.lock.
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: 2026.9.14
+          working_directory: service-agent
+          install_args: --locked
+          cache: false
+
+      - name: Tool lockfile is up to date
+        run: |
+          mise lock
+          git diff --exit-code -- mise.lock
+
+      - name: ruff
+        run: |
+          ruff check lib/python
+          ruff format --check lib/python
+
+      - name: biome
+        run: biome ci lib/typescript
+
+      - name: Python suite, with the TypeScript command line
+        working-directory: service-agent/lib/python
+        run: python3 -W error::ResourceWarning -m unittest -v
+
+      - name: TypeScript suite, with the Python command line
+        working-directory: service-agent/lib/typescript
+        run: node --test
