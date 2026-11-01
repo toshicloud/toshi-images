@@ -339,7 +339,7 @@ The tags on the AMI and its snapshot: `Name`, `toshi:image`
 
 ### The agent release
 
-`versions.env` pins Toshi v0.1.0-rc.6 and the guest image it names,
+`versions.env` pins Toshi v0.1.0-rc.7 and the guest image it names,
 toshi-images v0.1.22. The release carries the network helper
 (`toshi-host-netsets`), so the agent enforces the per-VM egress sets as
 well as the firewall table and the cgroup sets the unit fills at start.
