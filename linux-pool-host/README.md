@@ -51,8 +51,9 @@ and keys to the template's last step, `waagent -deprovision+user`.
 `versions.env` holds every input with its SHA-256. The agent and the guest
 image move together: `provision.sh` refuses a guest that the agent release
 does not name. `UBUNTU_SERIAL` is the serial of Canonical's Ubuntu 24.04
-image on both clouds; `AZURE_UBUNTU_VERSION` is Canonical's Azure image of
-the same serial, which is a different string from the AWS AMI name.
+AMI, pinned exactly and moved on its own, not with the guest's serial;
+`AZURE_UBUNTU_VERSION` is Canonical's Azure image, a different string from
+the AWS AMI name.
 
 ## The contract
 

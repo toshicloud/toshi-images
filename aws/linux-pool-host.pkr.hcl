@@ -164,8 +164,8 @@ build {
 
   provisioner "shell" {
     inline = [
-      "sudo bash /tmp/toshi/provision.sh build /tmp/toshi",
-      "sudo bash /tmp/toshi/provision.sh seal /tmp/toshi",
+      "sudo bash /tmp/toshi/provision.sh build aws /tmp/toshi",
+      "sudo bash /tmp/toshi/provision.sh seal aws /tmp/toshi",
     ]
   }
 
