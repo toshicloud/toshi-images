@@ -313,9 +313,11 @@ its usage) needs `AWS_REGION`. Optional:
   sets when the agent starts, and the network helper
   `toshi-host-netsets.socket` (enabled) and `toshi-host-netsets.service`,
   which writes each VM's sets when the agent asks.
-- `qemu-system-x86`, `qemu-utils`, `passt`, `ovmf` and `nftables` from the
-  Ubuntu archive. The guest boots with SeaBIOS; OVMF is there for
-  `toshi-host doctor`.
+- `qemu-system-x86`, `qemu-utils`, `ovmf` and `nftables` from the Ubuntu
+  archive, and passt from the pinned Ubuntu 26.04 package
+  (GPL-2.0-or-later), held, because Ubuntu 24.04's passt has no
+  `--dns-host` or `--map-host-loopback`. The guest boots with SeaBIOS;
+  OVMF is there for `toshi-host doctor`.
 - The guest image `ubuntu-24.04` as
   `/var/lib/toshi-host/data/images/ubuntu-24.04.qcow2` with its line in
   `SHA256SUMS`, installed with [`install.sh`](../install.sh). The guest is
