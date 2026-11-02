@@ -19,8 +19,11 @@ write next to themselves on the ISO.
 | `gh.sh` | GitHub CLI `.deb` | system |
 | `yq.sh` | yq binary | `/usr/bin/yq` |
 | `git-lfs.sh` | git-lfs tarball and system filters | `/usr/bin/git-lfs` |
+| `playwright-chromium.sh` | Playwright's `playwright-core`, the Chromium and headless shell it drives, and their shared libraries (opt-in) | `/usr/local/lib/node_modules/playwright-core`, `/opt/playwright-browsers` |
 
-Pins and download URLs live in `versions.env`. The Windows image and the
+Pins and download URLs live in `versions.env`, except Railpack's and the
+opt-in Playwright toolset's, in `railpack.env` and `playwright.env`. The
+Windows image and the
 service agent read the same file for the pins they share with these toolsets
 (their `build.sh`, and the service agent's `Dockerfile`, source it before
 their own). The `TOOLSETS` variable lists the
@@ -30,6 +33,31 @@ checks its checksum, and `retry` runs a command that downloads up to three times
 `apt-snapshot.sh` switches apt to the dated `APT_SNAPSHOT` for the build,
 derives `SOURCE_DATE_EPOCH`, and restores the stock sources and removes the
 snapshot's package lists before the image ships.
+
+`playwright-chromium.sh` is opt-in: it is not in the default `TOOLSETS`, and a
+build adds it only when a job needs a browser:
+
+```sh
+TOOLSETS="$TOOLSETS playwright-chromium" ./ubuntu-24.04/build.sh
+```
+
+It installs `playwright-core` with the image's npm (its `playwright-core`
+command lands on the `PATH`); unpacks the pinned Chromium and
+headless shell into `/opt/playwright-browsers/chromium-<revision>` and
+`/opt/playwright-browsers/chromium_headless_shell-<revision>`; installs their
+shared libraries; sets `PLAYWRIGHT_BROWSERS_PATH` in `/etc/environment`; and
+launches the browser once to print its version. Its line is
+`TOOLSET playwright-chromium <playwright version>+<browser version>`.
+Playwright's own ffmpeg is not installed, so recording video is unavailable.
+The browser build comes from `cdn.playwright.dev` under Google's terms, which
+grant no redistribution right; the image carries it for measurement and own
+use.
+
+`playwright.env` holds the toolset's pins, like `railpack.env` holds
+Railpack's. The image build copies this whole directory into the seed, so the
+script finds the file beside itself; only a build that selects the toolset
+adds that file to the image manifest's pins, which keeps the default image's
+manifest unchanged.
 
 Railpack is the exception: its pins, one set per version, are in
 [`../railpack.env`](../railpack.env), next to `guest.env`, and the image build
@@ -53,6 +81,13 @@ Toshi's `mise.toml`: copy it to `ci/mise.toml` and run `mise lock
 against the interpreter; its package version comes from `APT_SNAPSHOT`. The
 nightly `images` workflow rebuilds the image and fails if a pin is wrong or
 stale.
+
+For `playwright-chromium`, change `PLAYWRIGHT_VERSION` and its SHA256, and
+`PLAYWRIGHT_CHROMIUM_REVISION`, `PLAYWRIGHT_BROWSER_VERSION` and both zips'
+SHA256s, in `playwright.env` together: the revision, browser version and URLs
+come from the release's `browsers.json`, and each zip's SHA256 from the
+download itself. The container image pins the same release in
+`ubuntu-24.04-container/versions.env`; the two versions must match.
 
 Railpack is pinned in `railpack.env`, one set per version: to move it, add the
 new version to `RAILPACK_VERSIONS` (oldest first), set `RAILPACK_VERSION` to

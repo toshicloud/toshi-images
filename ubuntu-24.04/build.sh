@@ -2,10 +2,25 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# A builder may add an opt-in toolset (such as playwright-chromium) without
+# changing the default TOOLSETS line: a TOOLSETS in the environment wins, here
+# and in the guest.
+TOOLSETS_ENV="${TOOLSETS:-}"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/versions.env"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../toolsets/versions.env"
+if [[ -n "${TOOLSETS_ENV}" ]]; then
+  TOOLSETS="${TOOLSETS_ENV}"
+fi
+# The opt-in toolset's pins are their own file, read only when the build selects
+# the toolset, so a default build and its manifest stay as they were.
+PLAYWRIGHT_PINS=
+if [[ " ${TOOLSETS} " == *' playwright-chromium '* ]]; then
+  PLAYWRIGHT_PINS="${SCRIPT_DIR}/../toolsets/playwright.env"
+  # shellcheck disable=SC1090,SC1091
+  source "${PLAYWRIGHT_PINS}"
+fi
 # Railpack's pins, which its toolset reads from the seed.
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../railpack.env"
@@ -202,6 +217,9 @@ toolset_expected_pattern() {
     gh) echo "${GH_VERSION//./[.]}" ;;
     yq) echo "${YQ_VERSION//./[.]}" ;;
     git-lfs) echo "${GIT_LFS_VERSION//./[.]}" ;;
+    # The opt-in toolset prints Playwright's version, then the browser build
+    # it carries, as one line. `+` is a regex quantifier, so it is a class.
+    playwright-chromium) echo "${PLAYWRIGHT_VERSION//./[.]}[+]${PLAYWRIGHT_BROWSER_VERSION//./[.]}" ;;
     # `railpack --version` reports the version without the pin's leading v.
     railpack)
       local reported="${RAILPACK_VERSION#v}"
@@ -362,6 +380,12 @@ install -m 0755 "${TOSHI_GUEST_BIN}" "${seed_dir}/toshi-guest"
 cp "${runner_tarball}" "${seed_dir}/actions-runner-linux-x64.tar.gz"
 cp "${go_tarball}" "${seed_dir}/go.tar.gz"
 cp -r "${SCRIPT_DIR}/../toolsets" "${seed_dir}/toolsets"
+# An opt-in toolset chosen in the environment has to reach the guest too: the
+# guest sources this file last, so the line wins over the default TOOLSETS
+# in the copy above.
+if [[ -n "${TOOLSETS_ENV}" ]]; then
+  printf 'TOOLSETS="%s"\n' "${TOOLSETS}" >> "${seed_dir}/toolsets/versions.env"
+fi
 # The guest runs the manifest writer in toshi-finalize, after the seed has
 # been unmounted, so provisioning installs it into the image.
 cp "${SCRIPT_DIR}/../scripts/image-manifest.sh" "${seed_dir}/image-manifest.sh"
@@ -442,11 +466,15 @@ fi
 # The toolset lines the guest printed; its commissioning's `TOOLSET env ok`
 # line reports the environment, not a toolset.
 grep -a '^TOOLSET ' "${SERIAL_LOG}" | tr -d '\r' | grep -av '^TOOLSET env ok$' > "${WORK_DIR}/toolsets.serial"
+pins=("${SCRIPT_DIR}/versions.env" "${SCRIPT_DIR}/../toolsets/versions.env" "${SCRIPT_DIR}/../railpack.env")
+if [[ -n "${PLAYWRIGHT_PINS}" ]]; then
+  pins+=("${PLAYWRIGHT_PINS}")
+fi
 "${SCRIPT_DIR}/../scripts/image-manifest.sh" assemble \
   --image ubuntu-24.04 \
   --fragment "${fragment_file}" \
   --out "${manifest_file}" \
-  --pins "${SCRIPT_DIR}/versions.env" "${SCRIPT_DIR}/../toolsets/versions.env" "${SCRIPT_DIR}/../railpack.env" \
+  --pins "${pins[@]}" \
   --toolsets "${WORK_DIR}/toolsets.serial" \
   --guest-env "${SCRIPT_DIR}/../guest.env" \
   --image-digest "sha256:${image_sha256}"
