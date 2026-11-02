@@ -1,7 +1,7 @@
 name: pin-pr
 
 # When a release tag has built and published the images, open the pull request
-# in toshicloud/toshi.run that pins them in deploy/images.env, so the queue
+# in toshicloud/cloud that pins them in deploy/images.env, so the queue
 # lands the pin like any other change. A failed build leaves no tag: this
 # workflow deletes the tag a guest pin created when the tag's build failed.
 #
@@ -49,8 +49,8 @@ jobs:
     permissions:
       contents: read
     env:
-      REPOSITORY_IMAGES: toshicloud/toshi-images
-      REPOSITORY_RUN: toshicloud/toshi.run
+      REPOSITORY_IMAGES: toshicloud/cloud-images
+      REPOSITORY_RUN: toshicloud/cloud
       TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
       COMMIT: ${{ github.event.workflow_run.head_sha || inputs.commit }}
       CONCLUSION: ${{ github.event.workflow_run.conclusion }}
@@ -73,7 +73,7 @@ jobs:
         run: |
           echo "pin-pr: no credential, skipped"
 
-      - name: token for toshi.run
+      - name: token for cloud
         id: token
         if: steps.credential.outputs.present == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -81,7 +81,7 @@ jobs:
           app-id: ${{ secrets.TOSHI_CHAIN_APP_ID }}
           private-key: ${{ secrets.TOSHI_CHAIN_APP_PRIVATE_KEY }}
           owner: toshicloud
-          repositories: toshi.run
+          repositories: cloud
           permission-contents: write
           permission-pull-requests: write
 
@@ -114,9 +114,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
         with:
-          repository: toshicloud/toshi.run
+          repository: toshicloud/cloud
           ref: main
-          path: toshi.run
+          path: cloud
           token: ${{ steps.token.outputs.token }}
 
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
@@ -142,4 +142,4 @@ jobs:
             arguments+=(--dry-run)
           fi
           RUNS="$runs" REPOSITORY="$REPOSITORY_RUN" \
-            scripts/pin-images-env.sh "$TAG" "$COMMIT" toshi.run "${arguments[@]}"
+            scripts/pin-images-env.sh "$TAG" "$COMMIT" cloud "${arguments[@]}"

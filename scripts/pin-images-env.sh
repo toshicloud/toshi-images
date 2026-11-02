@@ -14,7 +14,7 @@
 #
 # env: GH_TOKEN (opens the pull request; the dry run needs none),
 # CONTAINER_REF (the container image reference without a tag),
-# REPOSITORY (default toshicloud/toshi.run), RUNS (optional: the publishing
+# REPOSITORY (default toshicloud/cloud), RUNS (optional: the publishing
 # runs for the body, such as "images 123, container 456").
 
 set -euo pipefail
@@ -53,7 +53,7 @@ for tool in oras jq; do
 done
 
 container_ref=${CONTAINER_REF:-ghcr.io/toshicloud/toshi-images/ubuntu-24.04-container}
-repository=${REPOSITORY:-toshicloud/toshi.run}
+repository=${REPOSITORY:-toshicloud/cloud}
 images_ref="ghcr.io/toshicloud/toshi-images/ubuntu-24.04:${tag}"
 container_tag="${container_ref}:${tag}"
 
