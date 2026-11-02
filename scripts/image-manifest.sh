@@ -2,7 +2,7 @@
 # Collect image contents and assemble or hash a Toshi image manifest.
 set -euo pipefail
 
-usage='usage: image-manifest.sh collect | assemble --image NAME --fragment FILE --out FILE [--base NAME@sha256:DIGEST] [--pins FILE ...] [--toolsets FILE] [--guest-env FILE] [--image-digest SHA] | digest FILE | pinset FILE'
+usage='usage: image-manifest.sh collect | assemble --image NAME --fragment FILE --out FILE [--base NAME[@sha256:DIGEST]] [--base-id ID] [--pins FILE ...] [--toolsets FILE] [--guest-env FILE] [--image-digest SHA] | digest FILE | pinset FILE'
 
 canonical() {
   jq -S -c 'del(.built, .image_digest)' "$1"
@@ -121,15 +121,15 @@ resolved_pins() {
 
 assemble() (
   local image='' fragment='' out='' base='' toolsets='' guest_env='' image_digest=''
-  local base_name='' base_digest='' commit date tmp
+  local base_name='' base_digest='' base_id='' commit date tmp
   local -a pins=()
   while (($#)); do
     case $1 in
-      --image|--fragment|--out|--base|--toolsets|--guest-env|--image-digest)
+      --image|--fragment|--out|--base|--base-id|--toolsets|--guest-env|--image-digest)
         (($# >= 2)) || { echo "$usage" >&2; return 2; }
         case $1 in
           --image) image=$2 ;; --fragment) fragment=$2 ;; --out) out=$2 ;;
-          --base) base=$2 ;; --toolsets) toolsets=$2 ;; --guest-env) guest_env=$2 ;;
+          --base) base=$2 ;; --base-id) base_id=$2 ;; --toolsets) toolsets=$2 ;; --guest-env) guest_env=$2 ;;
           --image-digest) image_digest=$2 ;;
         esac
         shift 2 ;;
@@ -142,8 +142,15 @@ assemble() (
   done
   [[ -n $image && -n $fragment && -n $out ]] || { echo "$usage" >&2; return 2; }
   if [[ -n $base ]]; then
-    [[ $base == *@sha256:* ]] || { echo 'image-manifest: base must be NAME@sha256:DIGEST' >&2; return 2; }
-    base_name=${base%@*}; base_digest=${base##*@}
+    # A base image with a content digest is NAME@sha256:DIGEST; one that a
+    # cloud names by an id instead (an AMI, an Azure image version) is NAME
+    # with --base-id.
+    if [[ $base == *@* ]]; then
+      [[ $base == *@sha256:* ]] || { echo 'image-manifest: base must be NAME or NAME@sha256:DIGEST' >&2; return 2; }
+      base_name=${base%@*}; base_digest=${base##*@}
+    else
+      base_name=$base
+    fi
   fi
   if [[ -n $guest_env ]]; then
     local guest_json
@@ -169,10 +176,11 @@ assemble() (
   commit=$(git -C "$(dirname -- "$0")" rev-parse --verify HEAD)
   date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   jq --arg image "$image" --arg date "$date" --arg commit "$commit" --arg base_name "$base_name" \
-    --arg base_digest "$base_digest" --arg image_digest "$image_digest" --argjson guest "$guest_json" \
+    --arg base_digest "$base_digest" --arg base_id "$base_id" --arg image_digest "$image_digest" --argjson guest "$guest_json" \
     --slurpfile pins "$tmp/pins.json" --slurpfile toolsets "$tmp/toolsets.json" \
     '{image:$image, built:{date:$date, commit:$commit},
-      base:{name:($base_name | select(length > 0) // null), digest:($base_digest | select(length > 0) // null)},
+      base:({name:($base_name | select(length > 0) // null), digest:($base_digest | select(length > 0) // null)}
+        + (if $base_id == "" then {} else {id:$base_id} end)),
       guest:$guest, packages:.packages, toolsets:$toolsets[0], users:.users, services:.services,
       listening:.listening, firewall:.firewall, pins:$pins[0],
       image_digest:($image_digest | select(length > 0) // null)}' "$fragment" > "$out"

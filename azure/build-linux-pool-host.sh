@@ -209,10 +209,15 @@ extract_manifest_fragment "${log}" >"${fragment}" ||
   die "missing TOSHI-MANIFEST-BEGIN/TOSHI-MANIFEST-END in ${log}"
 jq -e 'type == "object"' "${fragment}" >/dev/null 2>&1 ||
   die "the image manifest fragment in ${log} is not a JSON object"
+bash "${SCRIPT_DIR}/../linux-pool-host/manifest-inputs.sh" "${SCRIPT_DIR}/../linux-pool-host/versions.env" "${work}"
 bash "${SCRIPT_DIR}/../scripts/image-manifest.sh" assemble \
   --image linux-pool-host \
   --fragment "${fragment}" \
   --out "${image_manifest}" \
+  --base "${AZURE_UBUNTU_PUBLISHER}:${AZURE_UBUNTU_OFFER}:${AZURE_UBUNTU_SKU}" \
+  --base-id "${AZURE_UBUNTU_VERSION}" \
+  --guest-env "${work}/guest.env" \
+  --toolsets "${work}/toolsets.txt" \
   --pins "${SCRIPT_DIR}/../linux-pool-host/versions.env" "${SCRIPT_DIR}/../toolsets/versions.env"
 echo "manifest: ${image_manifest}"
 echo "manifest digest: $(bash "${SCRIPT_DIR}/../scripts/image-manifest.sh" digest "${image_manifest}")"
