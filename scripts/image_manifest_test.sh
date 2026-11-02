@@ -49,6 +49,11 @@ expect 'missing later pin file fails assembly' failed "$result"
 expect 'missing later pin file leaves no partial manifest' no "$([[ -e $tmp/incomplete.json ]] && echo yes || echo no)"
 expect 'base and guest fields' 'ubuntu,sha256:abcd,v1,sha256:guest,null,null' \
   "$(jq -r '[.base.name,.base.digest,.guest.version,.guest.digest,.guest.protocol_min,.guest.protocol_max] | map(tostring) | join(",")' "$tmp/manifest.json")"
+expect 'base without an id has no id field' null "$(jq -c '.base.id // null' "$tmp/manifest.json")"
+"$script" assemble --image sample --fragment "$tmp/fragment.json" --out "$tmp/cloud.json" \
+  --base 'Canonical:ubuntu-24_04-lts:server' --base-id 24.04.202609260 --guest-env "$tmp/guest.env"
+expect 'cloud base keeps its name and id, no digest' 'Canonical:ubuntu-24_04-lts:server,24.04.202609260,null' \
+  "$(jq -r '[.base.name,.base.id,.base.digest] | map(tostring) | join(",")' "$tmp/cloud.json")"
 expect 'toolset versions' 'node:24.1,go:1.2' "$(jq -r '[.toolsets[] | .name + ":" + .version] | join(",")' "$tmp/manifest.json")"
 digest=$("$script" digest "$tmp/manifest.json")
 expect 'digest is stable' "$digest" "$("$script" digest "$tmp/manifest.json")"

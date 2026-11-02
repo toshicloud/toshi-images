@@ -119,10 +119,17 @@ if [[ "${action}" == build ]]; then
     die "missing TOSHI-MANIFEST-BEGIN/TOSHI-MANIFEST-END in ${log}"
   jq -e 'type == "object"' "${fragment}" >/dev/null 2>&1 ||
     die "the image manifest fragment in ${log} is not a JSON object"
+  bash "${SCRIPT_DIR}/../linux-pool-host/manifest-inputs.sh" "${SCRIPT_DIR}/../linux-pool-host/versions.env" "${work}"
+  # The AMI the build started from: its name filter and the id Packer found.
+  base_id=$(sed -E $'s/\e\\[[0-9;]*m//g' "${log}" | sed -n 's/.*Found Image ID: \(ami-[0-9a-f]*\).*/\1/p' | head -n 1)
   bash "${SCRIPT_DIR}/../scripts/image-manifest.sh" assemble \
     --image linux-pool-host \
     --fragment "${fragment}" \
     --out "${image_manifest}" \
+    --base "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-${UBUNTU_SERIAL}" \
+    ${base_id:+--base-id "${base_id}"} \
+    --guest-env "${work}/guest.env" \
+    --toolsets "${work}/toolsets.txt" \
     --pins "${SCRIPT_DIR}/../linux-pool-host/versions.env" "${SCRIPT_DIR}/../toolsets/versions.env"
   echo "manifest: ${image_manifest}"
   echo "manifest digest: $(bash "${SCRIPT_DIR}/../scripts/image-manifest.sh" digest "${image_manifest}")"
