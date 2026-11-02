@@ -10,9 +10,9 @@
 # build is the same on both, with a read-only check of Azure's base image;
 # seal differs.
 #
-# <dir> (default: this script's directory) holds versions.env, install.sh
-# and the agent archive named in TOSHI_AGENT_ASSET; the template uploads
-# them to one directory on the build instance.
+# <dir> (default: this script's directory) holds versions.env, install.sh,
+# image-manifest.sh and the agent archive named in TOSHI_AGENT_ASSET; the
+# template uploads them to one directory on the build instance.
 #
 # The image carries everything a pool host needs except the two files the
 # pool's user data writes, /etc/toshi/enrollment-token and
@@ -263,6 +263,21 @@ install_guest() {
   rm -rf "${pull}"
 }
 
+# The image's own contents, for build-linux-pool-host.sh to assemble into the
+# manifest beside the Packer manifest: base64 between markers, a line at a
+# time, as the Ubuntu image's toshi-finalize writes its own. Packer hands no
+# file back from the build instance, so the fragment leaves in Packer's output,
+# which the build script keeps.
+collect_manifest() {
+  local work=$1
+  local fragment=${work}/manifest-fragment.json
+  [[ -f "${dir}/image-manifest.sh" ]] || die "${dir}/image-manifest.sh not found"
+  bash "${dir}/image-manifest.sh" collect >"${fragment}"
+  echo 'TOSHI-MANIFEST-BEGIN'
+  base64 "${fragment}"
+  echo 'TOSHI-MANIFEST-END'
+}
+
 # The Azure base image must keep the Azure datasource and walinuxagent's
 # provisioning settings: the build changes the image only by adding the
 # agent, and a pool's VM boots it as Canonical ships it. Read-only.
@@ -327,6 +342,9 @@ build() {
     command -v "${cmd}" >/dev/null || die "${cmd} not found"
   done
   [[ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]] || die "OVMF firmware not found"
+
+  step "collecting the image manifest"
+  collect_manifest "${work}"
 }
 
 seal_aws() {

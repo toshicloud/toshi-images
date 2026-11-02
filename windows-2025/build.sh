@@ -14,6 +14,10 @@ OUT_DIR="${OUT_DIR:-${CACHE_DIR}/out}"
 WORK_DIR="${WORK_DIR:-${OUT_DIR}/work-windows-2025}"
 SERIAL_LOG="${WORK_DIR}/serial.log"
 OUTPUT_IMAGE="${OUT_DIR}/windows-2025.qcow2"
+# The guest writes its manifest fragment between these markers on the serial
+# console, base64 and a line at a time.
+MANIFEST_BEGIN="TOSHI-MANIFEST-BEGIN"
+MANIFEST_END="TOSHI-MANIFEST-END"
 
 WINDOWS_ISO_CACHE="windows-server-2025-eval-${WINDOWS_ISO_BUILD}.iso"
 VIRTIO_ISO_CACHE="virtio-win-${VIRTIO_WIN_VERSION}.iso"
@@ -234,6 +238,18 @@ serial_clean() {
   tr -d '\r' < "${SERIAL_LOG}" | sed -E $'s/\e\\[[0-9;]*m//g'
 }
 
+# collect-manifest.ps1 writes the fragment between the markers, base64 with
+# 950 characters a line. A marker counts when the line ends with it, and only
+# base64 lines between the markers are decoded.
+extract_manifest_fragment() {
+  serial_clean | awk -v begin="${MANIFEST_BEGIN}" -v end="${MANIFEST_END}" '
+    $0 ~ (begin "$") { inside = 1; next }
+    $0 ~ (end "$") { if (inside) exit }
+    inside' \
+    | grep -aE '^[A-Za-z0-9+/=]+$' \
+    | base64 -d
+}
+
 report_guest_failure() {
   local marker
   marker=$(serial_clean | grep -a -m1 -o 'TOSHI-IMAGE-BUILD: FAILED.*' || true)
@@ -339,6 +355,7 @@ require_cmd "${QEMU_IMG}"
 require_cmd genisoimage
 require_cmd curl
 require_cmd sha256sum
+require_cmd jq
 validate_accel
 if [[ ! -f "${OVMF_CODE}" ]]; then
   echo "OVMF code firmware not found: ${OVMF_CODE}" >&2
@@ -374,6 +391,7 @@ render_autounattend
 cp "${SCRIPT_DIR}/firstlogon.ps1" "${WORK_DIR}/cfg/"
 cp "${SCRIPT_DIR}/devdrive.ps1" "${WORK_DIR}/cfg/"
 cp "${SCRIPT_DIR}/tools.ps1" "${WORK_DIR}/cfg/"
+cp "${SCRIPT_DIR}/collect-manifest.ps1" "${WORK_DIR}/cfg/"
 cp "${SCRIPT_DIR}/runner-images.ps1" "${WORK_DIR}/cfg/"
 mkdir -p "${WORK_DIR}/cfg/vendor/runner-images"
 cp "${SCRIPT_DIR}/vendor/runner-images/LICENSE" \
@@ -472,5 +490,36 @@ echo "convert time: ${convert_seconds}s"
 echo "input ${WINDOWS_ISO_CACHE}: $(input_size_human "${windows_iso}")"
 echo "input ${VIRTIO_ISO_CACHE}: $(input_size_human "${virtio_iso}")"
 echo "input ${RUNNER_ZIP_CACHE}: $(input_size_human "${runner_zip}")"
+
+echo "step 12: write the image manifest"
+# tools.ps1 collected the image's own contents; here they get what only the
+# host knows: the pins the build read, the toolset versions it checked and the
+# compressed image's own digest.
+fragment_file="${WORK_DIR}/manifest.fragment.json"
+manifest_file="${OUT_DIR}/manifest.json"
+if ! extract_manifest_fragment >"${fragment_file}"; then
+  echo "missing ${MANIFEST_BEGIN}/${MANIFEST_END} in ${SERIAL_LOG}" >&2
+  tail_serial_on_failure
+  exit 1
+fi
+if ! jq -e 'type == "object"' "${fragment_file}" >/dev/null 2>&1; then
+  echo "the guest's manifest in ${SERIAL_LOG} is not a JSON object" >&2
+  tail_serial_on_failure
+  exit 1
+fi
+# One TOOLSET line per tool, as the image reported them; build.sh already
+# checked each against versions.env.
+grep -a '^TOOLSET ' "${SERIAL_LOG}" | tr -d '\r' >"${WORK_DIR}/toolsets.serial"
+"${SCRIPT_DIR}/../scripts/image-manifest.sh" assemble \
+  --image windows-2025 \
+  --fragment "${fragment_file}" \
+  --out "${manifest_file}" \
+  --pins "${SCRIPT_DIR}/../toolsets/versions.env" "${SCRIPT_DIR}/versions.env" \
+  --toolsets "${WORK_DIR}/toolsets.serial" \
+  --guest-env "${SCRIPT_DIR}/../guest.env" \
+  --image-digest "sha256:${image_sha256}"
+echo "manifest: ${manifest_file}"
+echo "manifest digest: $("${SCRIPT_DIR}/../scripts/image-manifest.sh" digest "${manifest_file}")"
+
 echo "total build time: $((SECONDS - build_start_seconds))s"
 echo "build finished: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"

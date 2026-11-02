@@ -328,6 +328,12 @@ try {
     Install-GitHubCli
     Install-SmallTools
     Write-ToolsetVersions
+    # The image's own contents, for build.sh to assemble into manifest.json.
+    $manifestSrc = Join-Path $ConfigRoot 'collect-manifest.ps1'
+    if (-not (Test-Path -LiteralPath $manifestSrc)) {
+        throw 'collect-manifest.ps1 not found on config CD'
+    }
+    . $manifestSrc
     Write-SerialLog 'TOSHI-IMAGE-BUILD: tools done'
 } finally {
     $ErrorActionPreference = $previousErrorAction

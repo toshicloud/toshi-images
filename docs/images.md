@@ -31,6 +31,14 @@ Each VM and container image directory holds:
 - the files the build copies into the guest;
 - a `README.md` that says what the build needs and how to run it.
 
+Every build also writes the image's manifest beside the image it produced,
+never committed: what the image contains and the pins it was built from
+(`manifest.json`, and `linux-pool-host-manifest.json` for the pool host).
+[`scripts/image-manifest.sh`](../scripts/image-manifest.sh) collects an
+image's contents and assembles and hashes its manifest;
+[published-images.md](published-images.md) describes the document and the
+comparison between builds.
+
 The Ubuntu image's build is described in [its README](../ubuntu-24.04/README.md).
 
 The Windows Server 2025 image is built from the evaluation media, unattended,
@@ -41,3 +49,6 @@ The build activates the evaluation, and a second blank disk becomes a Dev Drive 
 It also applies a few service, telemetry and .NET settings with scripts
 copied unchanged from GitHub's runner-images (MIT); see
 [`windows-2025/vendor/runner-images`](../windows-2025/vendor/runner-images/README.md).
+After the toolsets, [`collect-manifest.ps1`](../windows-2025/collect-manifest.ps1)
+writes the image's contents to the serial console and `build.sh` assembles
+`manifest.json` from them.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Creates a TUF-derived Rekor v2 config and attests an OCI digest's full SPDX SBOM.
-# Container mode catalogs the registry image; predicate mode uses a built image's SBOM.
+# Container mode catalogs the registry image; predicate and manifest use supplied files.
 set -euo pipefail
 
-mode=${1:?usage: attest-sbom.sh config FILE | container\|predicate REF SBOM IDENTITY CONFIG BUNDLE}
+mode=${1:?usage: attest-sbom.sh config FILE | container\|predicate\|manifest REF FILE IDENTITY CONFIG BUNDLE}
 if [[ $mode == config ]]; then
 	exec cosign signing-config create --with-default-rekor-v2 --out "${2:?config file}"
 fi
-if [[ $mode != container && $mode != predicate ]]; then
+if [[ $mode != container && $mode != predicate && $mode != manifest ]]; then
 	echo "unknown SBOM source: $mode" >&2
 	exit 2
 fi
@@ -27,14 +27,19 @@ fi
 if [[ $mode == container ]]; then
 	syft "registry:${ref}" -o "spdx-json=${sbom}"
 fi
-bytes=$(wc -c < "$sbom")
-packages=$(jq '.packages | length' "$sbom")
-echo "SPDX SBOM: ${bytes} bytes, ${packages} packages"
+type=spdxjson
+if [[ $mode == manifest ]]; then
+	type=https://toshicloud.io/image-manifest/v1
+else
+	bytes=$(wc -c < "$sbom")
+	packages=$(jq '.packages | length' "$sbom")
+	echo "SPDX SBOM: ${bytes} bytes, ${packages} packages"
+fi
 
 cosign attest --yes "${registry_flags[@]}" --signing-config "$config" \
-	--type spdxjson --predicate "$sbom" --bundle "$bundle" "$ref"
+	--type "$type" --predicate "$sbom" --bundle "$bundle" "$ref"
 # Keep the full verified predicate out of the log; the bundle retains it.
-cosign verify-attestation --timeout 90s "${registry_flags[@]}" --check-claims=true --type spdxjson \
+cosign verify-attestation --timeout 90s "${registry_flags[@]}" --check-claims=true --type "$type" \
 	--certificate-oidc-issuer https://token.actions.githubusercontent.com \
 	--certificate-identity-regexp "$identity" "$ref" > "${bundle}.verified.json"
 jq -c '.verificationMaterial.tlogEntries[] | {logIndex, kindVersion}' "$bundle"
