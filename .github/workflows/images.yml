@@ -9,7 +9,7 @@ name: images
 #
 # Lint runs on every event. The jobs that build and boot an image run on a
 # pull request or a push to main only when the change touches a file they
-# read, or this workflow; a release tag, the weekly run and a dispatch run
+# read, or this workflow; a release tag, the nightly run and a dispatch run
 # all of them.
 
 on:
@@ -18,10 +18,10 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
-  # Weekly, so that a change outside this repository (an apt mirror, a
+  # Nightly, so that a change outside this repository (an apt mirror, a
   # toolset's download) shows before the next pull request.
   schedule:
-    - cron: "17 4 * * 1"
+    - cron: "17 4 * * *"
 
 permissions:
   contents: read

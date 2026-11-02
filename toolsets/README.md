@@ -20,7 +20,10 @@ write next to themselves on the ISO.
 | `yq.sh` | yq binary | `/usr/bin/yq` |
 | `git-lfs.sh` | git-lfs tarball and system filters | `/usr/bin/git-lfs` |
 
-Pins and download URLs live in `versions.env`. The `TOOLSETS` variable lists the
+Pins and download URLs live in `versions.env`. The Windows image and the
+service agent read the same file for the pins they share with these toolsets
+(their `build.sh`, and the service agent's `Dockerfile`, source it before
+their own). The `TOOLSETS` variable lists the
 run order. Shared helpers are in `lib.sh`: `fetch_verified` downloads a file and
 checks its checksum, and `retry` runs a command that downloads up to three times.
 [Download limits](#download-limits) has the time limit of each try.

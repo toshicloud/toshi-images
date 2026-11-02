@@ -22,6 +22,7 @@ if [[ ${1:-} != --inside ]]; then
 		-v "$volume:/volume" \
 		-v "$here/smoke-test.sh:/opt/smoke/smoke-test.sh:ro" \
 		-v "$here/versions.env:/opt/smoke/versions.env:ro" \
+		-v "$here/../toolsets/versions.env:/opt/smoke/toolsets.env:ro" \
 		-v "$here/lib:/opt/smoke/lib:ro" \
 		"$image" /opt/smoke/smoke-test.sh --inside || rc=$?
 	exit "$rc"
@@ -29,6 +30,7 @@ fi
 
 # In the container, as the image's user, with no network.
 set +e
+. /opt/smoke/toolsets.env
 . /opt/smoke/versions.env
 failed=0
 check() {
@@ -142,9 +144,11 @@ else
 	failed=1
 fi
 
-# The pins the image carries, and each licence at its documented path.
+# The pins the image carries, and each licence at its documented path. Node's
+# pin is shared with the runner images, so it is in toolsets.env.
+exists toolsets-file /usr/share/toshi/service-agent/toolsets.env
 exists versions-file /usr/share/toshi/service-agent/versions.env
-check versions-node "$NODE_VERSION" "$(sed -n 's/^NODE_VERSION=//p' /usr/share/toshi/service-agent/versions.env)"
+check versions-node "$NODE_VERSION" "$(sed -n 's/^NODE_VERSION=//p' /usr/share/toshi/service-agent/toolsets.env)"
 lic=/usr/share/licenses/toshi-service-agent
 exists claude-licence "$lic/claude-code/LICENSE.md"
 exists codex-licence "$lic/codex/LICENSE"

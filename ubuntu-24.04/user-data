@@ -104,8 +104,9 @@ write_files:
       systemctl enable toshi-guest.service toshi-guest-userdata.service toshi-guest-gce.service toshi-guest-azure.service
       DEBIAN_FRONTEND=noninteractive apt-get purge -y unattended-upgrades
       systemctl mask apt-daily.timer apt-daily-upgrade.timer systemd-networkd-wait-online.service
-      # toshi-guest starts its own sshd, as the runner user, only for a
-      # failed job's debug session; the system one never listens.
+      # openssh-server is installed for the sshd binary: toshi-guest starts
+      # its own sshd, as the runner user, only for a failed job's debug
+      # session, so the system units are disabled and masked and never listen.
       systemctl disable ssh.service ssh.socket
       systemctl mask ssh.service ssh.socket
       umount /mnt/seed

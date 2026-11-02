@@ -6,10 +6,12 @@ here=$(dirname "$(readlink -f "$0")")
 tag=${1:-toshi-service-agent:latest}
 
 # shellcheck disable=SC1091
+. "$here/../toolsets/versions.env"
+# shellcheck disable=SC1091
 . "$here/versions.env"
 : "${BASE_IMAGE:?versions.env pins no BASE_IMAGE}"
 : "${BASE_DIGEST:?versions.env pins no BASE_DIGEST}"
-: "${NODE_VERSION:?versions.env pins no NODE_VERSION}"
+: "${NODE_VERSION:?toolsets/versions.env pins no NODE_VERSION}"
 : "${PYTHON_VERSION:?versions.env pins no PYTHON_VERSION}"
 
 # The base image is pinned by digest: a Dockerfile whose BASE has none stops

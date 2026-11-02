@@ -66,10 +66,48 @@ function Read-KeyValueFile {
     return $map
 }
 
+# versions.env derives some URLs and cache names from the pins it shares with
+# the Linux toolsets (toolsets.env); bash expands them for build.sh, and this
+# does the same here, including ${VAR/from/to}, which replaces "from" once.
+function Expand-VersionReferences {
+    param([Parameter(Mandatory = $true)][hashtable]$Map)
+    $reference = '\$\{([A-Z0-9_]+)(?:/([^/]*)/([^}]*))?\}'
+    foreach ($key in @($Map.Keys)) {
+        $value = [string]$Map[$key]
+        for ($round = 0; $round -lt 10 -and $value.Contains('${'); $round++) {
+            $value = [regex]::Replace($value, $reference, {
+                    param($match)
+                    $name = $match.Groups[1].Value
+                    if (-not $Map.ContainsKey($name)) {
+                        throw "versions.env refers to ${name}, and neither versions.env nor toolsets.env declares it"
+                    }
+                    $replacement = [string]$Map[$name]
+                    if ($match.Groups[2].Success) {
+                        $replacement = $replacement.Replace($match.Groups[2].Value, $match.Groups[3].Value)
+                    }
+                    return $replacement
+                })
+        }
+        $Map[$key] = $value
+    }
+}
+
+# The pins of both files, the shared one first, with their references expanded.
+function Read-VersionMap {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $map = @{}
+    foreach ($name in @('toolsets.env', 'versions.env')) {
+        $entries = Read-KeyValueFile -Path (Join-Path $Root $name)
+        foreach ($key in $entries.Keys) { $map[$key] = $entries[$key] }
+    }
+    Expand-VersionReferences -Map $map
+    return $map
+}
+
 # One entry per installer of tools.ps1: every <KEY>_CACHE of versions.env,
 # with its URL and the checksum SHA256SUMS holds for the file name.
 function Get-InstallerPlan {
-    $versions = Read-KeyValueFile -Path (Join-Path $ConfigRoot 'versions.env')
+    $versions = Read-VersionMap -Root $ConfigRoot
     $sums = @{}
     foreach ($line in Get-Content -LiteralPath (Join-Path $ConfigRoot 'SHA256SUMS')) {
         if ($line -match '^([0-9a-f]{64})\s+(\S+)$') { $sums[$Matches[2]] = $Matches[1] }

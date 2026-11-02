@@ -56,7 +56,8 @@ The intent log is in the image twice:
   or the `toshi-intents-ts` launcher); Node 24 strips the types.
 
 The library's tests are not in the image. The image carries its pins at
-`/usr/share/toshi/service-agent/versions.env`.
+`/usr/share/toshi/service-agent/versions.env`, and the Node pin it shares with
+the runner images at `/usr/share/toshi/service-agent/toolsets.env`.
 
 It runs as `runner` (uid 1001, gid 1001) with `/volume` owned by
 `runner:runner`, so a fresh named volume the runtime mounts there keeps that
@@ -91,7 +92,7 @@ volume on `/volume` and `HOME=/volume/home`, and fails unless:
 - the image has a version label other than `dev`, and runs as uid and gid
   1001, and `runner` can write to `/volume/home`;
 - Node, Python, Claude Code, Codex and OpenCode report the versions
-  `versions.env` pins, the two ACP commands are on `PATH`, and the packages
+  the pin files name, the two ACP commands are on `PATH`, and the packages
   in `/opt/agents/node_modules` report the same versions;
 - `claude auth status`, `codex login status` and `opencode auth list` each
   report signed out;
@@ -99,7 +100,8 @@ volume on `/volume` and `HOME=/volume/home`, and fails unless:
   absolute path, and both launchers begin a step;
 - both library suites pass with the image's runtimes, from a copy of
   `lib/` mounted read-only;
-- `/usr/share/toshi/service-agent/versions.env` and each licence file above
+- `/usr/share/toshi/service-agent/versions.env`,
+  `/usr/share/toshi/service-agent/toolsets.env` and each licence file above
   are there.
 
 A broken pin stops the build at the pin: `build.sh` refuses a `Dockerfile`
