@@ -1,17 +1,17 @@
 # shellcheck shell=bash
 
-# retry runs a command that downloads, up to three times, and waits 10 s and
-# then 30 s between the tries. Each failed try prints one line on stderr. It
+# retry runs a command that downloads, up to RETRY_TRIES times (three unless
+# the caller sets another), and waits 10 s and then 30 s between the tries. Each failed try prints one line on stderr. It
 # returns the last try's exit code. An ERR trap in the caller sees only this
 # function's return statement in BASH_COMMAND, so the command is also left
 # in RETRY_FAILED for the trap to print.
 retry() {
-	local try rc=0
+	local try rc=0 tries=${RETRY_TRIES:-3}
 	RETRY_FAILED=
-	for try in 1 2 3; do
+	for ((try = 1; try <= tries; try++)); do
 		"$@" && return 0 || rc=$?
-		echo "retry: try ${try}/3 failed (exit ${rc}): $*" >&2
-		if ((try < 3)); then
+		echo "retry: try ${try}/${tries} failed (exit ${rc}): $*" >&2
+		if ((try < tries)); then
 			sleep $((try * 20 - 10))
 		fi
 	done
@@ -29,6 +29,11 @@ TRY_MAX_TIME=300
 FETCH_CONNECT_TIME=30
 FETCH_SPEED_FLOOR=1024
 FETCH_STALL_TIME=60
+# `apt-get update` fetches every index of the snapshot, and a slow mirror
+# needs more than TRY_MAX_TIME: one run took about 900 s. Its tries are
+# UPDATE_TRIES of UPDATE_MAX_TIME each (2 x 1200 + 10 = 2410 s at the most).
+UPDATE_MAX_TIME=1200
+UPDATE_TRIES=2
 
 # An image build sets another TRY_MAX_TIME in limits.env, next to this file in
 # the seed (ubuntu-24.04/build.sh writes it).
@@ -62,8 +67,13 @@ fetch() {
 }
 
 # apt_get is bounded apt-get, for a call that downloads (update, install
-# --download-only). apt's own timeout and tries stay as they are.
+# --download-only). apt's own timeout and tries stay as they are. An update has
+# its own, longer limit (UPDATE_MAX_TIME, UPDATE_TRIES).
 apt_get() {
+	if [[ ${1:-} == update ]]; then
+		RETRY_TRIES=$UPDATE_TRIES retry timeout -k 10 "$UPDATE_MAX_TIME" apt-get "$@" || return $?
+		return 0
+	fi
 	bounded apt-get "$@" || return $?
 }
 

@@ -14,6 +14,9 @@ set -euo pipefail
 sources=/etc/apt/sources.list.d/ubuntu.sources
 saved=/var/lib/toshi/apt-snapshot/ubuntu.sources
 keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg
+# Every apt call of the build, including the ones a tool makes itself, retries
+# a fetch that failed with a transient error such as a 5xx from the mirror.
+retries=/etc/apt/apt.conf.d/80toshi-retries
 id_pattern='^[0-9]{8}T[0-9]{6}Z$'
 
 snapshot_id() {
@@ -42,6 +45,7 @@ Suites: ${codename} ${codename}-updates ${codename}-backports ${codename}-securi
 Components: main restricted universe multiverse
 Signed-By: ${keyring}
 EOF
+		printf 'Acquire::Retries "5";\n' >"$retries"
 		# Do not let a failed update fall back to lists from the stock archive.
 		rm -rf /var/lib/apt/lists/*
 		echo "apt-snapshot: apt reads snapshot ${id}" ;;
@@ -49,6 +53,7 @@ EOF
 		[[ -f $saved ]] || { echo "apt-snapshot: saved stock sources not found: $saved" >&2; exit 1; }
 		cp -p "$saved" "$sources"
 		rm -rf "$(dirname -- "$saved")"
+		rm -f "$retries"
 		rm -rf /var/lib/apt/lists/*
 		echo "apt-snapshot: stock sources restored" ;;
 	*)
