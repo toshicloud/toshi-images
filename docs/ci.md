@@ -8,7 +8,7 @@ they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
 A release tag, the nightly run and a dispatch run them all.
 
 Ubuntu packages installed by the image builds use the dated snapshot in
-`toolsets/versions.env`; shipped images keep their stock apt sources. The
+`toolsets/versions.env`, read through the cache at `apt.toshicloud.com`; shipped images keep their stock apt sources. The
 container builds bootstrap a CA bundle from the stock archive before using
 the HTTPS snapshot, then install the snapshot's versions of it and its
 dependencies.

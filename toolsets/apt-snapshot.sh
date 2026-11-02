@@ -7,6 +7,11 @@
 #   apt-snapshot.sh use FILE      switch apt to that snapshot (root)
 #   apt-snapshot.sh restore       put the sources back and drop the package lists (root)
 #
+# apt.toshicloud.com is a read-through cache of the Ubuntu snapshot archive:
+# it serves the same files (dists/ and pool/ under the dated path), so the
+# date still decides which packages a build gets, and apt checks the same
+# signatures.
+#
 # One snapshot id serves the release, updates, backports and security pockets,
 # so one deb822 stanza replaces the image's own sources while it builds.
 set -euo pipefail
@@ -40,7 +45,7 @@ case ${1:-} in
 		[[ -f $saved ]] || { mkdir -p "$(dirname -- "$saved")"; cp -p "$sources" "$saved"; }
 		cat >"$sources" <<EOF
 Types: deb
-URIs: https://snapshot.ubuntu.com/ubuntu/${id}
+URIs: https://apt.toshicloud.com/ubuntu/${id}
 Suites: ${codename} ${codename}-updates ${codename}-backports ${codename}-security
 Components: main restricted universe multiverse
 Signed-By: ${keyring}

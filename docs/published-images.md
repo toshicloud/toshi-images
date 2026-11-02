@@ -77,11 +77,13 @@ sorted, with `built` and `image_digest` removed. Package names and versions,
 toolsets, users, services, listening ports, the firewall, the pins, the guest
 and the base all stay in.
 
-Ubuntu apt installs use the dated archive snapshot in `APT_SNAPSHOT`, and
-their package versions participate in the compared digest. The snapshot is
+Ubuntu apt installs use the dated archive snapshot in `APT_SNAPSHOT`, read
+through the cache at `https://apt.toshicloud.com/ubuntu/<APT_SNAPSHOT>`, which
+serves the files of Ubuntu's snapshot service unchanged. The date alone pins
+the package set, and their package versions participate in the compared digest. The snapshot is
 used only during the build; the shipped image has its stock sources. The
 container builds first install a CA bundle from the stock archive to reach
-the HTTPS snapshot, then replace it and its bootstrap dependencies with the
+the HTTPS cache, then replace it and its bootstrap dependencies with the
 snapshot's versions. An unchanged
 pin set is expected to produce the same compared digest, and the comparison
 reports any other drift. The image file's own digest is recorded but never

@@ -30,7 +30,8 @@ their own). The `TOOLSETS` variable lists the
 run order. Shared helpers are in `lib.sh`: `fetch_verified` downloads a file and
 checks its checksum, and `retry` runs a command that downloads up to three times.
 [Download limits](#download-limits) has the time limit of each try.
-`apt-snapshot.sh` switches apt to the dated `APT_SNAPSHOT` for the build,
+`apt-snapshot.sh` switches apt to the dated `APT_SNAPSHOT` for the build (read
+through the `apt.toshicloud.com` cache of the Ubuntu snapshot archive),
 derives `SOURCE_DATE_EPOCH`, and restores the stock sources and removes the
 snapshot's package lists before the image ships.
 
