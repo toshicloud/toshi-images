@@ -285,9 +285,10 @@ jobs:
             --arg source "git+https://github.com/${GITHUB_REPOSITORY}" --arg commit "$GITHUB_SHA" \
             --arg builder "https://github.com/${GITHUB_WORKFLOW_REF}" \
             --arg invocation "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            --arg buildType "https://github.com/${GITHUB_REPOSITORY}/container/v1" \
             --arg version "$GITHUB_REF_NAME" --arg tar "$TAR_SHA256" --arg base "${base%@*}" --arg baseDigest "${base##*@sha256:}" \
             --slurpfile materials "$RUNNER_TEMP/materials.json" \
-            '{buildDefinition: {buildType: "https://github.com/toshicloud/toshi-images/container/v1",
+            '{buildDefinition: {buildType: $buildType,
               externalParameters: {version: $version, platforms: ["linux/amd64"]},
               internalParameters: {syft: "1.52.0", cosign: "3.1.3"},
               resolvedDependencies: ([{uri: $source, digest: {gitCommit: $commit}},
@@ -295,7 +296,9 @@ jobs:
                 {uri: "toshi-runner-ubuntu-24.04.oci.tar.zst", digest: {sha256: $tar}}] + $materials[0])},
               runDetails: {builder: {id: $builder}, metadata: {invocationId: $invocation}}}' \
             > "$RUNNER_TEMP/container.provenance.json"
-          identity='^https://github.com/toshicloud/toshi-images/\.github/workflows/container\.yml@refs/tags/v.*$'
+          # An image signed under either repository name verifies: the signing identity
+          # is the workflow of the repository that ran it.
+          identity='^https://github.com/toshicloud/(toshi-images|cloud-images)/\.github/workflows/container\.yml@refs/tags/v.*$'
           SECONDS=0
           trap 'echo "sign/attest/verify: ${SECONDS} s (failed)"' ERR
           cosign sign --yes "$PINNED"

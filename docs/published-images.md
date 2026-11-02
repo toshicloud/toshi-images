@@ -47,9 +47,11 @@ workflow at its release tag:
 ```sh
 cosign verify-attestation --type https://toshicloud.io/image-manifest/v1 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github.com/toshicloud/toshi-images/\.github/workflows/.*@refs/tags/v.*$' \
+  --certificate-identity-regexp '^https://github.com/toshicloud/(toshi-images|cloud-images)/\.github/workflows/.*@refs/tags/v.*$' \
   ghcr.io/toshicloud/toshi-images/ubuntu-24.04:v0.1.22
 ```
+
+The signing identity is the publishing workflow of the repository that built the image. That repository is `toshicloud/toshi-images` and will also be `toshicloud/cloud-images`; the expression above verifies an image signed under either name, including images signed before a rename.
 
 The document holds:
 
