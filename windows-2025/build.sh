@@ -2,6 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The pins this image shares with the Linux toolsets, then its own: Windows'
+# versions.env derives several URLs and cache names from the shared ones.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../toolsets/versions.env"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/versions.env"
 
@@ -15,7 +19,8 @@ WINDOWS_ISO_CACHE="windows-server-2025-eval-${WINDOWS_ISO_BUILD}.iso"
 VIRTIO_ISO_CACHE="virtio-win-${VIRTIO_WIN_VERSION}.iso"
 RUNNER_ZIP_CACHE="actions-runner-win-x64-${RUNNER_VERSION}.zip"
 
-# The installers tools.ps1 runs; each has <KEY>_URL and <KEY>_CACHE in versions.env.
+# The installers tools.ps1 runs; each has <KEY>_URL and <KEY>_CACHE in versions.env
+# (some derived from the shared pins in toolsets/versions.env).
 TOOL_INSTALLERS="POWERSHELL_7 GIT_FOR_WINDOWS RUSTUP_INIT VS_BUILDTOOLS SEVENZIP DOTNET_SDK_8 WIX
   PYTHON NODE GO DOTNET_SDK_9 JAVA17 JAVA21 CMAKE NINJA GH YQ JQ NUGET"
 # tools.ps1 writes `TOOLSET <name> <version>` for each from the installed

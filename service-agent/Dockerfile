@@ -10,14 +10,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # The shared fetch helper and the pins. toolsets/lib.sh is the repository's
-# own downloader: fetch_verified fails at once on a SHA256 mismatch.
+# own downloader: fetch_verified fails at once on a SHA256 mismatch. The Node
+# pin is shared with the runner images, so toolsets/versions.env carries it
+# and is sourced before the service agent's own file.
 COPY toolsets/lib.sh /opt/build/lib.sh
+COPY toolsets/versions.env /opt/build/toolsets.env
 COPY service-agent/versions.env /opt/build/versions.env
 
 # Node and Python, from the pins. apt installs the CA bundle and curl they are
 # fetched with, git and ripgrep for the CLIs and their status commands; curl
 # comes out again in the same layer once the downloads are done.
-RUN set -eux; . /opt/build/lib.sh; . /opt/build/versions.env; \
+RUN set -eux; . /opt/build/lib.sh; . /opt/build/toolsets.env; . /opt/build/versions.env; \
     apt_get update; \
     apt_install --no-install-recommends ca-certificates curl git ripgrep xz-utils; \
     fetch_verified "$NODE_URL" sha256 "$NODE_SHA256" /opt/build/node.tar.xz; \
@@ -56,6 +59,7 @@ RUN set -eux; \
     install -D -m 0644 /opt/agents/node_modules/@agentclientprotocol/codex-acp/LICENSE "$lic/codex-acp/LICENSE"; \
     install -D -m 0644 /opt/build/licences/codex/LICENSE "$lic/codex/LICENSE"; \
     install -D -m 0644 /opt/build/licences/codex/NOTICE "$lic/codex/NOTICE"; \
+    install -D -m 0644 /opt/build/toolsets.env /usr/share/toshi/service-agent/toolsets.env; \
     install -D -m 0644 /opt/build/versions.env /usr/share/toshi/service-agent/versions.env; \
     install -D -m 0644 /opt/build/lib/python/cli.py /opt/toshi/service-agent/python/cli.py; \
     install -D -m 0644 /opt/build/lib/typescript/intents.ts /opt/toshi/service-agent/typescript/intents.ts; \

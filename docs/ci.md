@@ -5,7 +5,7 @@ every pull request and every push to `main`. `lint` runs on every run; the
 jobs that build and boot an image run only when the change touches a file
 they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
 `fetch-guest.sh`, `mise.toml`, `mise.lock` or `.github/workflows/images.yml`.
-A release tag, the weekly run and a dispatch run them all:
+A release tag, the nightly run and a dispatch run them all:
 
 - `lint` runs shellcheck over every script, validates the Windows
   template with Packer, and fails when `mise.lock`, `mise.packer.lock` or

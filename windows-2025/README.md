@@ -16,7 +16,7 @@ Rust projects' Windows jobs expect (see [Tools](#tools)).
 | `firstlogon.ps1` | first-logon script: runner, helper and Dev Drive tasks, guest settings, activation, then shutdown |
 | `devdrive.ps1` | startup script: formats a blank second disk as the Dev Drive `D:` and creates the runner's work folder on it |
 | `tools.ps1` | first-logon step that installs the tools from the installers on the build's config CD |
-| `versions.env` | pinned Windows media, virtio-win, runner and tool versions and URLs |
+| `versions.env` | pinned Windows media, virtio-win, runner and tool versions and URLs; the tool pins shared with the Linux image come from [`../toolsets/versions.env`](../toolsets/versions.env) |
 | `SHA256SUMS` | checksums we computed for the downloads, with the date and the file behind each link |
 
 The evaluation media is for building and testing this image internally. It is
@@ -198,7 +198,8 @@ cache, as they do on any self-hosted runner.
 
 `build.sh` downloads every installer, checks it against `SHA256SUMS` and puts
 it on the config CD with a `tools.env` naming the files, so a version bump
-changes only `versions.env` and `SHA256SUMS`. Two installs still download
+changes only `versions.env` (for a tool the Linux image pins too, that pin is
+in [`../toolsets/versions.env`](../toolsets/versions.env)) and `SHA256SUMS`. Two installs still download
 inside the VM: the Build Tools bootstrapper fetches its payload for the
 pinned release, and rustup fetches the toolchains and checks them against
 the channel manifest. Git is set with `core.longpaths`, `safe.directory '*'`
@@ -248,7 +249,9 @@ does not.
 Change the URL, the version (for the Windows media, `WINDOWS_ISO_FILE` and
 `WINDOWS_ISO_BUILD`, and `WINDOWS_IMAGE_NAME`, the edition the answer file
 installs, when the media names it differently) and the checksum in `versions.env` and `SHA256SUMS`
-together. Microsoft publishes no checksum for the evaluation ISO, so a media
+together. Node, Go, Temurin, CMake, gh and yq are pins this image shares with
+the Linux one: change those in [`../toolsets/versions.env`](../toolsets/versions.env),
+and the URL and cache name here follow. Microsoft publishes no checksum for the evaluation ISO, so a media
 refresh behind the same link fails the check; compute the new SHA256 from the
 downloaded file, record the date with `date -u`, and bump the entry
 deliberately. The evaluation expires 180 days after the build installs and

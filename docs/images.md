@@ -24,9 +24,10 @@ Each VM and container image directory holds:
 
 - `build.sh`, which builds the image on a suitable host;
 - `versions.env`, which pins every input the build downloads, with its
-  SHA256 (`ubuntu-24.04-container` reads the runner from
-  `ubuntu-24.04`'s, and its own pins the Playwright release; its README
-  lists what else it downloads);
+  SHA256 (`windows-2025` and `service-agent` read the pins they share with
+  the Linux image from `toolsets/versions.env`; `ubuntu-24.04-container`
+  reads the runner from `ubuntu-24.04`'s, and its own pins the Playwright
+  release; its README lists what else it downloads);
 - the files the build copies into the guest;
 - a `README.md` that says what the build needs and how to run it.
 

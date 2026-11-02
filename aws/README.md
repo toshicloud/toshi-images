@@ -250,7 +250,9 @@ nothing.
 of `versions.env` and `SHA256SUMS` can be compared with `build.sh`'s:
 
 ```sh
-mkdir -p /tmp/plan && cp windows-2025/versions.env windows-2025/SHA256SUMS /tmp/plan/
+mkdir -p /tmp/plan
+cp windows-2025/versions.env windows-2025/SHA256SUMS /tmp/plan/
+cp toolsets/versions.env /tmp/plan/toolsets.env
 pwsh -NoProfile -File aws/windows-2025/provision.ps1 -Step plan -ConfigRoot /tmp/plan
 ```
 

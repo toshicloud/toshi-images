@@ -13,6 +13,7 @@ on:
     paths:
       - service-agent/**
       - toolsets/lib.sh
+      - toolsets/versions.env
       - attest-sbom.sh
       - .github/workflows/service-agent.yml
   push:
@@ -22,6 +23,7 @@ on:
     paths:
       - service-agent/**
       - toolsets/lib.sh
+      - toolsets/versions.env
       - attest-sbom.sh
       - .github/workflows/service-agent.yml
   workflow_dispatch:
@@ -115,8 +117,9 @@ jobs:
               grep '^ARG BASE=' service-agent/Dockerfile
               ;;
             node-sha256)
-              sed -i -E 's/^NODE_SHA256=.*/NODE_SHA256=0000000000000000000000000000000000000000000000000000000000000000/' service-agent/versions.env
-              grep '^NODE_SHA256=' service-agent/versions.env
+              # Node's pin is shared with the runner images: toolsets/versions.env.
+              sed -i -E 's/^NODE_SHA256=.*/NODE_SHA256=0000000000000000000000000000000000000000000000000000000000000000/' toolsets/versions.env
+              grep '^NODE_SHA256=' toolsets/versions.env
               ;;
             npm-integrity)
               jq '.packages["node_modules/@anthropic-ai/claude-code"].integrity = "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="' \
@@ -279,6 +282,7 @@ jobs:
           # The source revision binds the recipes; the pin-file digests record
           # the exact tool and CLI inputs, without claiming vendor identity.
           for file in service-agent/Dockerfile service-agent/versions.env \
+            toolsets/versions.env \
             service-agent/package.json service-agent/package-lock.json \
             service-agent/licences/codex/LICENSE service-agent/licences/codex/NOTICE \
             toolsets/lib.sh; do

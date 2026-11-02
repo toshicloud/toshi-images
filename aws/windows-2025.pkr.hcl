@@ -95,9 +95,12 @@ locals {
   ami_name   = "toshi-windows-2025-${formatdate("YYYYMMDD-hhmmss", local.built)}"
   root       = abspath(path.root)
   config_dir = "${local.root}/../windows-2025"
-  provision  = "& C:/toshi/config/aws-provision.ps1 -Step"
+  # The pins windows-2025/versions.env derives some URLs from.
+  shared_versions = "${local.root}/../toolsets/versions.env"
+  provision       = "& C:/toshi/config/aws-provision.ps1 -Step"
   toolset_from = [
     "${local.config_dir}/versions.env",
+    local.shared_versions,
     "${local.config_dir}/SHA256SUMS",
     "${local.config_dir}/tools.ps1",
     "${local.config_dir}/runner-images.ps1",
@@ -206,6 +209,12 @@ build {
   provisioner "file" {
     source      = "${local.config_dir}/"
     destination = "C:/toshi/config/"
+  }
+
+  # The shared pins windows-2025/versions.env derives its URLs from.
+  provisioner "file" {
+    source      = local.shared_versions
+    destination = "C:/toshi/config/toolsets.env"
   }
 
   provisioner "file" {

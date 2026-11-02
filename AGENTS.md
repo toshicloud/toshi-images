@@ -41,12 +41,12 @@ change touches before your first change.
     The last two run when the change touches an image input
     (`ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
     `fetch-guest.sh`, `mise.toml`, `mise.lock`,
-    `.github/workflows/images.yml`); a release tag, the weekly run and a
+    `.github/workflows/images.yml`); a release tag, the nightly run and a
     dispatch run them.
   - `container`, when the change touches the container recipe, the
     toolsets or the runner's pins: builds the container image and runs its
     smoke test.
-  - `kvm`: weekly, after the weekly `images` build, and on dispatch: boots
+  - `kvm`: nightly, after the nightly `images` build, and on dispatch: boots
     the stock Ubuntu cloud image under KVM. The image build's boot proof
     covers every change that can affect an image.
 - Every job that boots a VM runs under KVM on a hosted runner and never
