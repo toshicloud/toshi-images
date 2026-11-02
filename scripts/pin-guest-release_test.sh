@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs scripts/pin-guest-release.sh in a throwaway clone of this repository's
-# layout: a guest.env, two release tags and a bare origin. It pins a helper,
-# tags the next release, does nothing twice, and refuses a version that is
-# already pinned elsewhere.
+# layout: a guest.env, two release tags and a bare origin, with a stub gh. It
+# pins a helper in a pull request without touching main, updates the open
+# pull request, does nothing twice, refuses a version that is already pinned
+# elsewhere, and tags the next release only on a merged guest pin.
 
 set -euo pipefail
 
@@ -64,39 +65,95 @@ before_tags=$(tags)
 # A dry run says what it would pin, and writes nothing.
 run "$version" "$digest" --dry-run
 expect 'dry run: exit 0' 0 "$rc"
-expect 'dry run: names the next tag' yes "$(grep -q 'v0.1.10' <<<"$output" && echo yes || echo no)"
+expect 'dry run: says it would open the pull request' yes "$(grep -q 'pull request' <<<"$output" && echo yes || echo no)"
 expect 'dry run: no commit' "$before_commits" "$(commits)"
 expect 'dry run: no tag' "$before_tags" "$(tags)"
 expect 'dry run: guest.env unchanged' e8d651ef2 "$(pinned)"
 
-# The pin: a commit on main and the next tag, both pushed.
+# A stub gh, so the pin needs no network: it records its calls, and answers
+# the list of open pull requests from $tmp/open.
+mkdir -p "$tmp/bin"
+cat >"$tmp/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"$GH_LOG"
+if [[ $1 == pr && $2 == list ]]; then
+  cat "$GH_OPEN" 2>/dev/null || true
+fi
+EOF
+chmod +x "$tmp/bin/gh"
+export PATH="$tmp/bin:$PATH" GH_LOG="$tmp/gh.log" GH_OPEN="$tmp/open" GH_TOKEN=x GITHUB_REPOSITORY=owner/repo
+: >"$GH_LOG"
+branch_on_origin() { git --git-dir="$tmp/origin.git" rev-parse -q --verify refs/heads/guest/pin >/dev/null && echo yes || echo no; }
+origin_env() { git --git-dir="$tmp/origin.git" show "guest/pin:guest.env" | sed -n 's/^TOSHI_GUEST_VERSION=//p'; }
+
+# The pin: a branch on origin and a pull request, no push to main, no tag.
+main_before=$(git --git-dir="$tmp/origin.git" rev-parse refs/heads/main)
 run "$version" "$digest"
 expect 'pin: exit 0' 0 "$rc"
-expect 'pin: one commit' "$((before_commits + 1))" "$(commits)"
-expect 'pin: guest.env carries the version' "$version" "$(pinned)"
-expect 'pin: guest.env carries the digest' "$digest" "$(sed -n 's/^TOSHI_GUEST_DIGEST=//p' guest.env)"
-expect 'pin: one new tag' "$((before_tags + 1))" "$(tags)"
-expect 'pin: the next tag exists' yes "$(git rev-parse -q --verify refs/tags/v0.1.10 >/dev/null && echo yes || echo no)"
-expect 'pin: the tag is on origin' yes "$(git --git-dir="$tmp/origin.git" rev-parse -q --verify refs/tags/v0.1.10 >/dev/null && echo yes || echo no)"
-expect 'pin: main is on origin' yes "$(git --git-dir="$tmp/origin.git" rev-parse -q --verify refs/heads/main >/dev/null && echo yes || echo no)"
-expect 'pin: the commit subject' 'chore(guest): pin v0.1.0-rc.3-843-g40e6dac1f' "$(git log -1 --format=%s)"
+expect 'pin: guest/pin is on origin' yes "$(branch_on_origin)"
+expect 'pin: the branch carries the version' "$version" "$(origin_env)"
+expect 'pin: the branch carries the digest' "$digest" "$(git --git-dir="$tmp/origin.git" show guest/pin:guest.env | sed -n 's/^TOSHI_GUEST_DIGEST=//p')"
+expect 'pin: the commit subject' "chore(guest): pin ${version}" "$(git --git-dir="$tmp/origin.git" log -1 --format=%s guest/pin)"
+expect 'pin: main on origin untouched' "$main_before" "$(git --git-dir="$tmp/origin.git" rev-parse refs/heads/main)"
+expect 'pin: no tag' "$before_tags" "$(tags)"
+expect 'pin: a pull request is created against main' yes "$(grep -q 'pr create .*--base main --head guest/pin' "$GH_LOG" && echo yes || echo no)"
+expect 'pin: the checkout is unchanged' e8d651ef2 "$(pinned)"
+expect 'pin: the checkout has no leftover worktree' 1 "$(git worktree list | wc -l)"
 
-# The same dispatch again: no commit, no tag.
-before_commits=$(commits)
-before_tags=$(tags)
+# The same dispatch with the pull request open: nothing is pushed or edited.
+: >"$GH_LOG"
+echo "7 chore(guest): pin ${version}" >"$GH_OPEN"
 run "$version" "$digest"
 expect 'repeat: exit 0' 0 "$rc"
 expect 'repeat: says nothing to do' yes "$(grep -q 'nothing to do' <<<"$output" && echo yes || echo no)"
-expect 'repeat: no commit' "$before_commits" "$(commits)"
-expect 'repeat: no tag' "$before_tags" "$(tags)"
+expect 'repeat: no create or edit' 0 "$(grep -c 'pr create\|pr edit' "$GH_LOG" || true)"
 
-# A version pinned at another digest is a contradiction, not a pin.
-run "$version" "$other_digest"
+# A newer version updates the open pull request.
+: >"$GH_LOG"
+newer=v0.1.0-rc.8
+run "$newer" "$other_digest"
+expect 'update: exit 0' 0 "$rc"
+expect 'update: the open pull request is edited' yes "$(grep -q 'pr edit 7 ' "$GH_LOG" && echo yes || echo no)"
+expect 'update: the branch carries the newer version' "$newer" "$(origin_env)"
+: >"$GH_OPEN"
+
+# A version pinned at another digest on main is a contradiction.
+run e8d651ef2 "$other_digest"
 expect 'other digest: exit 1' 1 "$rc"
 
 # A malformed digest is refused before anything is read or written.
 run "$version" not-a-digest
 expect 'bad digest: exit 2' 2 "$rc"
+
+# The tag after the merge: land the pin on main the way the queue does.
+git fetch -q origin guest/pin
+git merge -q --ff-only FETCH_HEAD
+git push -q origin main
+
+before_tags=$(tags)
+run --tag --dry-run
+expect 'tag dry run: names the next tag' yes "$(grep -q 'would tag v0.1.10' <<<"$output" && echo yes || echo no)"
+expect 'tag dry run: no tag' "$before_tags" "$(tags)"
+
+run --tag
+expect 'tag: exit 0' 0 "$rc"
+expect 'tag: one new tag' "$((before_tags + 1))" "$(tags)"
+expect 'tag: names the pin commit' "$(git rev-parse HEAD)" "$(git rev-parse 'v0.1.10^{commit}')"
+expect 'tag: the tag is on origin' yes "$(git --git-dir="$tmp/origin.git" rev-parse -q --verify refs/tags/v0.1.10 >/dev/null && echo yes || echo no)"
+
+# Again, and after an unrelated commit: the pin already has its tag.
+git commit -q --allow-empty -m 'chore: unrelated'
+before_tags=$(tags)
+run --tag
+expect 'tag repeat: exit 0' 0 "$rc"
+expect 'tag repeat: no tag' "$before_tags" "$(tags)"
+
+# A guest.env change that is not a guest pin gets no tag.
+sed -i 's|^TOSHI_GUEST_VERSION=.*|TOSHI_GUEST_VERSION=by-hand|' guest.env
+git commit -q -am 'chore: edit by hand'
+run --tag
+expect 'tag by hand: exit 0' 0 "$rc"
+expect 'tag by hand: no tag' "$before_tags" "$(tags)"
 
 if ((failed)); then
   echo "pin-guest-release_test: ${failed} failed"

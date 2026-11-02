@@ -41,7 +41,8 @@ On a release tag, `publish` pushes the image from `ubuntu-24-04` (see
 
 The `guest-pin` workflow pins a guest helper that Toshi published: it runs
 on that repository's `guest-published` dispatch, writes the version and
-digest into `guest.env` and pushes the next release tag (see
+digest into `guest.env` in a pull request for the merge queue, and once that
+pin has merged it pushes the next release tag (see
 [The guest helper](guest-helper.md)). The `pin-pr` workflow runs when
 `images` or `container` finishes for a release tag: once both have published,
 it opens the pull request in Toshi that moves Toshi's image pins to the new
