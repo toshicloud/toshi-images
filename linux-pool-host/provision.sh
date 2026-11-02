@@ -10,9 +10,9 @@
 # build is the same on both, with a read-only check of Azure's base image;
 # seal differs.
 #
-# <dir> (default: this script's directory) holds versions.env, install.sh,
-# image-manifest.sh and the agent archive named in TOSHI_AGENT_ASSET; the
-# template uploads them to one directory on the build instance.
+# <dir> (default: this script's directory) holds versions.env, toolsets.env,
+# apt-snapshot.sh, install.sh, image-manifest.sh and the agent archive named
+# in TOSHI_AGENT_ASSET; the template uploads them to the build instance.
 #
 # The image carries everything a pool host needs except the two files the
 # pool's user data writes, /etc/toshi/enrollment-token and
@@ -116,8 +116,9 @@ wait_for_boot() {
 
 apt_install() {
   export DEBIAN_FRONTEND=noninteractive
+  bash "${dir}/apt-snapshot.sh" use "${dir}/toolsets.env"
   local apt=(apt-get -o DPkg::Lock::Timeout=600 -y)
-  "${apt[@]}" update
+  "${apt[@]}" update --error-on=any
   # shellcheck disable=SC2086 # HOST_PACKAGES is a word list
   "${apt[@]}" install --no-install-recommends ${HOST_PACKAGES}
 }
@@ -324,6 +325,7 @@ build() {
   trap "rm -rf '${work}'" EXIT
   step "installing passt ${PASST_VERSION}"
   install_passt "${work}"
+  bash "${dir}/apt-snapshot.sh" restore
   mkdir "${work}/release"
   step "installing the agent ${TOSHI_AGENT_VERSION}"
   install_agent "${work}/release"

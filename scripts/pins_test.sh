@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The pins the Windows and service-agent images share with the Linux toolsets
-# are declared once, in toolsets/versions.env. This fails when another
+# The pins shared by the images are declared once, in toolsets/versions.env.
+# This fails when another
 # versions.env copies one of them, or when a mise.toml that cannot read the
 # file names a different Node or Go release.
 
@@ -9,7 +9,7 @@ set -euo pipefail
 scripts=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH='' cd -- "$scripts/.." && pwd)
 
-shared="NODE_VERSION NODE_SHA256 GO_VERSION JAVA17_VERSION JAVA21_VERSION CMAKE_VERSION GH_VERSION YQ_VERSION"
+shared="APT_SNAPSHOT NODE_VERSION NODE_SHA256 GO_VERSION JAVA17_VERSION JAVA21_VERSION CMAKE_VERSION GH_VERSION YQ_VERSION"
 
 value() { # <root> <key>: the value toolsets/versions.env declares.
 	sed -n "s/^$2=//p" "$1/toolsets/versions.env" | tail -n 1
@@ -32,7 +32,12 @@ check_mise() { # <root> <file> <tool> <key>
 }
 
 check_root() {
-	local dir=$1 key file rc=0
+	local dir=$1 key file snapshot rc=0
+	snapshot=$(value "$dir" APT_SNAPSHOT)
+	if [[ ! $snapshot =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+		echo "FAIL toolsets/versions.env has an invalid APT_SNAPSHOT: ${snapshot:-nothing}"
+		rc=1
+	fi
 	while IFS= read -r file; do
 		[[ $file == "$dir/toolsets/versions.env" ]] && continue
 		for key in $shared; do
@@ -67,6 +72,16 @@ if check_root "$tmp" >/dev/null 2>&1; then
 	failed=1
 else
 	echo "ok self-test: a copied NODE_VERSION fails the check"
+fi
+
+# An invalid snapshot must not pass even when the shared pins are unique.
+: >"$tmp/windows-2025/versions.env"
+sed -i 's/^APT_SNAPSHOT=.*/APT_SNAPSHOT=invalid/' "$tmp/toolsets/versions.env"
+if check_root "$tmp" >/dev/null 2>&1; then
+	echo "FAIL self-test: an invalid APT_SNAPSHOT passed the check"
+	failed=1
+else
+	echo "ok self-test: an invalid APT_SNAPSHOT fails the check"
 fi
 
 if ((failed)); then

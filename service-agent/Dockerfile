@@ -14,14 +14,33 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # pin is shared with the runner images, so toolsets/versions.env carries it
 # and is sourced before the service agent's own file.
 COPY toolsets/lib.sh /opt/build/lib.sh
+COPY toolsets/apt-snapshot.sh /opt/build/apt-snapshot.sh
 COPY toolsets/versions.env /opt/build/toolsets.env
 COPY service-agent/versions.env /opt/build/versions.env
 
 # Node and Python, from the pins. apt installs the CA bundle and curl they are
 # fetched with, git and ripgrep for the CLIs and their status commands; curl
-# comes out again in the same layer once the downloads are done.
+# comes out again in the same layer once the downloads are done. Bootstrap
+# HTTPS with the stock CA package, then replace every package it changed with
+# its snapshot version.
 RUN set -eux; . /opt/build/lib.sh; . /opt/build/toolsets.env; . /opt/build/versions.env; \
-    apt_get update; \
+    dpkg-query -W -f='${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' | \
+        awk '$1 == "ii" { print $2 "=" $3 }' | LC_ALL=C sort > /opt/build/pre-bootstrap; \
+    apt_get update --error-on=any; \
+    apt_install --no-install-recommends ca-certificates; \
+    dpkg-query -W -f='${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' | \
+        awk '$1 == "ii" { print $2 "=" $3 }' | LC_ALL=C sort > /opt/build/post-bootstrap; \
+    apt-mark showauto > /opt/build/bootstrap-auto; \
+    /opt/build/apt-snapshot.sh use /opt/build/toolsets.env; \
+    apt_get update --error-on=any; \
+    bootstrap_packages=(); \
+    while IFS='=' read -r package _; do \
+        version=$(apt-cache madison "$package" | awk 'NR == 1 { print $3 }'); \
+        test -n "$version"; bootstrap_packages+=("$package=$version"); \
+    done < <(comm -13 /opt/build/pre-bootstrap /opt/build/post-bootstrap); \
+    test "${#bootstrap_packages[@]}" -gt 0; \
+    apt_install --no-install-recommends --allow-downgrades "${bootstrap_packages[@]}"; \
+    xargs -r apt-mark auto < /opt/build/bootstrap-auto; \
     apt_install --no-install-recommends ca-certificates curl git ripgrep xz-utils; \
     fetch_verified "$NODE_URL" sha256 "$NODE_SHA256" /opt/build/node.tar.xz; \
     tar -xJf /opt/build/node.tar.xz -C /usr/local --strip-components=1; \
@@ -34,7 +53,7 @@ RUN set -eux; . /opt/build/lib.sh; . /opt/build/toolsets.env; . /opt/build/versi
     ln -sf /opt/python/bin/python3.13 /usr/local/bin/python3.13; \
     node --version; python3 --version; \
     apt-get purge -y --auto-remove curl xz-utils; \
-    apt-get clean; rm -rf /var/lib/apt/lists/*
+    apt-get clean; /opt/build/apt-snapshot.sh restore
 
 # The agent CLIs and ACP adapters, installed unmodified by `npm ci` from the
 # committed lock; every package's integrity is checked against it. Their bins

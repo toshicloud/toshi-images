@@ -37,6 +37,8 @@ labels=(--label "org.opencontainers.image.version=${version}")
 if revision=$(git -C "$root" rev-parse HEAD 2>/dev/null); then
 	labels+=(--label "org.opencontainers.image.revision=${revision}")
 fi
+source_date_epoch=$("$root/toolsets/apt-snapshot.sh" epoch "$root/toolsets/versions.env")
 docker build --progress=plain --build-arg PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
+	--build-arg SOURCE_DATE_EPOCH="$source_date_epoch" \
 	"${labels[@]}" \
 	-f "$here/Dockerfile" -t "$tag" "$here/.."

@@ -18,8 +18,8 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
-  # Nightly, so that a change outside this repository (an apt mirror, a
-  # toolset's download) shows before the next pull request.
+  # Nightly, so that a change outside this repository (the snapshot archive
+  # or a toolset's download) shows before the next pull request.
   schedule:
     - cron: "17 4 * * *"
 

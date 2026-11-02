@@ -5,7 +5,7 @@ set -euo pipefail
 usage='usage: image-manifest.sh collect | assemble --image NAME --fragment FILE --out FILE [--base NAME@sha256:DIGEST] [--pins FILE ...] [--toolsets FILE] [--guest-env FILE] [--image-digest SHA] | digest FILE | pinset FILE'
 
 canonical() {
-  jq -S -c 'del(.built, .image_digest, .packages[].version)' "$1"
+  jq -S -c 'del(.built, .image_digest)' "$1"
 }
 
 sudo_level() {

@@ -214,8 +214,14 @@ build {
       "${local.config}/versions.env",
       "${local.root}/../install.sh",
       "${local.root}/../scripts/image-manifest.sh",
+      "${local.root}/../toolsets/apt-snapshot.sh",
     ]
     destination = "/tmp/toshi/"
+  }
+
+  provisioner "file" {
+    source      = "${local.root}/../toolsets/versions.env"
+    destination = "/tmp/toshi/toolsets.env"
   }
 
   provisioner "file" {

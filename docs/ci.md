@@ -5,7 +5,15 @@ every pull request and every push to `main`. `lint` runs on every run; the
 jobs that build and boot an image run only when the change touches a file
 they read: `ubuntu-24.04/`, `toolsets/`, `guest.env`, `railpack.env`,
 `fetch-guest.sh`, `mise.toml`, `mise.lock` or `.github/workflows/images.yml`.
-A release tag, the nightly run and a dispatch run them all:
+A release tag, the nightly run and a dispatch run them all.
+
+Ubuntu packages installed by the image builds use the dated snapshot in
+`toolsets/versions.env`; shipped images keep their stock apt sources. The
+container builds bootstrap a CA bundle from the stock archive before using
+the HTTPS snapshot, then install the snapshot's versions of it and its
+dependencies.
+
+The `images` jobs:
 
 - `lint` runs shellcheck over every script, validates the Windows
   template with Packer, and fails when `mise.lock`, `mise.packer.lock` or

@@ -6,7 +6,7 @@ write next to themselves on the ISO.
 
 | Script | Installs | Location |
 |--------|----------|----------|
-| `python.sh` | Python, venv, pip (Ubuntu's current noble-updates packages, checked as 3.12.x) | system |
+| `python.sh` | Python, venv, pip (Ubuntu's snapshot noble-updates packages, checked as 3.12.x) | system |
 | `node.sh` | Node.js LTS tarball | `/usr/local` |
 | `go.sh` | Go toolchain tarball | `/usr/local/go` |
 | `rust.sh` | rustup and a pinned stable toolchain for `runner` | `/home/runner/.cargo`, `/home/runner/.rustup` |
@@ -27,6 +27,9 @@ their own). The `TOOLSETS` variable lists the
 run order. Shared helpers are in `lib.sh`: `fetch_verified` downloads a file and
 checks its checksum, and `retry` runs a command that downloads up to three times.
 [Download limits](#download-limits) has the time limit of each try.
+`apt-snapshot.sh` switches apt to the dated `APT_SNAPSHOT` for the build,
+derives `SOURCE_DATE_EPOCH`, and restores the stock sources and removes the
+snapshot's package lists before the image ships.
 
 Railpack is the exception: its pins, one set per version, are in
 [`../railpack.env`](../railpack.env), next to `guest.env`, and the image build
@@ -46,10 +49,10 @@ GitHub's ubuntu-24.04 set take their checksums from Docker's `dists/noble`
 `Packages` index and the buildx, compose, gh, yq and git-lfs release checksum
 files, Kitware's `cmake-<v>-SHA-256.txt` and Temurin's `.sha256.txt`. The CI tools follow
 Toshi's `mise.toml`: copy it to `ci/mise.toml` and run `mise lock
---platform linux-x64` in `ci/`. Python has no exact pin: `PYTHON_SERIES` is the
-major.minor checked against the interpreter, and apt installs whatever the noble-updates
-packages currently are. The weekly `images` workflow rebuilds the image and fails if
-a pin is wrong or stale.
+--platform linux-x64` in `ci/`. `PYTHON_SERIES` is the major.minor checked
+against the interpreter; its package version comes from `APT_SNAPSHOT`. The
+nightly `images` workflow rebuilds the image and fails if a pin is wrong or
+stale.
 
 Railpack is pinned in `railpack.env`, one set per version: to move it, add the
 new version to `RAILPACK_VERSIONS` (oldest first), set `RAILPACK_VERSION` to

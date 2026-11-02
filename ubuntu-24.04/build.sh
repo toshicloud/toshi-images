@@ -147,11 +147,12 @@ serial_clean() {
 # toshi-finalize writes the image's contents between the markers, base64 with
 # 76 columns a line. Console output can share a line with the script's, so a
 # marker counts when the line ends with it, and only base64 lines between the
-# markers are decoded.
+# markers are decoded. awk reads the whole log: ending early would break
+# the pipe into it, which pipefail turns into a failure.
 extract_manifest_fragment() {
   serial_clean | awk -v begin="${MANIFEST_BEGIN}" -v end="${MANIFEST_END}" '
     $0 ~ (begin "$") { inside = 1; next }
-    $0 ~ (end "$") { if (inside) exit }
+    $0 ~ (end "$") { inside = 0; next }
     inside' \
     | grep -aE '^[A-Za-z0-9+/=]+$' \
     | base64 -d
