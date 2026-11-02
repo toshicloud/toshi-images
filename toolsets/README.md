@@ -146,6 +146,10 @@ installation half way. `bounded` and `apt_get` end a try with `timeout`
 (exit 124, or 137 when `-k` had to kill it). apt, rustup and mise have download timeouts of their own; these
 are left as they are, and the limit here is `timeout`'s.
 
+`apt-snapshot.sh use` also sets `Acquire::Retries "5"` for apt (a drop-in that `restore` removes), so a fetch that fails with a transient error from the mirror, such as a 503, is tried again by apt itself, including in the apt calls a tool makes on its own. The Dockerfile runs Playwright's `install-deps` under `retry`.
+
+`apt-get update` has its own limit, `UPDATE_MAX_TIME` (1200 seconds) with `UPDATE_TRIES` (2) tries, because a slow mirror needs most of 900 seconds to give all indexes: at the most 2 × 1200 + 10 = 2410 seconds, the guest build's `BUILD_TIMEOUT` is 1800 seconds for the whole provisioning.
+
 With the default limit, one download step fails at the latest after its
 three tries and the two waits: 3 × 300 + 40 = 940 seconds for a file, and 970 seconds for a step under
 `timeout`, which kills a command that ignores it 10 seconds later. A file

@@ -88,9 +88,9 @@ RUN set -eux; cd /opt/build/toolsets; \
 
 # Chromium's shared libraries, from Playwright's own list for the release the
 # jobs use. The VM image lacks them too.
-RUN set -eux; set -a; . /etc/environment; set +a; \
+RUN set -eux; . /opt/build/toolsets/lib.sh; set -a; . /etc/environment; set +a; \
     test -n "$PLAYWRIGHT_VERSION"; \
-    cd /opt/build; npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium; \
+    cd /opt/build; retry npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium; \
     rm -rf /root/.npm
 
 # The VM image's tool check, minus the docker daemon, which starts with the
