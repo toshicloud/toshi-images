@@ -162,6 +162,14 @@ toolset_pin() {
 	gh) echo "$GH_VERSION" ;;
 	yq) echo "$YQ_VERSION" ;;
 	git-lfs) echo "$GIT_LFS_VERSION" ;;
+	# The opt-in toolset prints Playwright's version and the browser build
+	# it carries, as its script does. Its pins are in playwright.env, beside
+	# this file.
+	playwright-chromium) (
+		# shellcheck disable=SC1090,SC1091
+		source "${BASH_SOURCE[0]%/*}/playwright.env"
+		echo "${PLAYWRIGHT_VERSION}+${PLAYWRIGHT_BROWSER_VERSION}"
+	) ;;
 	# Railpack pins its versions and their checksums in ../railpack.env,
 	# next to guest.env; the image build puts that file in the seed beside
 	# this directory.

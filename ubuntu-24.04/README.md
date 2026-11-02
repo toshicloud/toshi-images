@@ -51,7 +51,9 @@ name resolves through the network's DNS as before.
 ## Tools
 
 Every pin is in [`../toolsets/versions.env`](../toolsets/versions.env), in
-[`../railpack.env`](../railpack.env) for Railpack, or, for the CI tools, in
+[`../railpack.env`](../railpack.env) for Railpack, in
+[`../toolsets/playwright.env`](../toolsets/playwright.env) for the opt-in
+Playwright toolset, or, for the CI tools, in
 [`../toolsets/ci/mise.toml`](../toolsets/ci/mise.toml), a copy of the CI
 tools from Toshi's `mise.toml`.
 
@@ -88,6 +90,23 @@ downloads nothing. The image's Go and Node are linked there. `task`,
 `golangci-lint`, `buf`, `goreleaser` and the two protoc plugins are also
 linked into `/usr/local/bin`. Plain `pnpm` stays corepack's, which follows a
 project's `packageManager`.
+
+`playwright-chromium.sh` is opt-in and not in the default `TOOLSETS`: a build
+adds it only when a job needs a browser.
+
+```sh
+TOOLSETS="$TOOLSETS playwright-chromium" ./ubuntu-24.04/build.sh
+```
+
+It installs Playwright's `playwright-core` with the image's npm, the Chromium
+and headless shell it drives under `/opt/playwright-browsers`, their shared
+libraries, and `PLAYWRIGHT_BROWSERS_PATH` in `/etc/environment`. Its serial
+line is `TOOLSET playwright-chromium <playwright version>+<browser version>`.
+Its pins are in [`../toolsets/playwright.env`](../toolsets/playwright.env),
+and a build that selects the toolset adds that file to the image manifest's
+pins. The browser build comes from `cdn.playwright.dev`, under Google's terms,
+which grant no redistribution right: the image carries it for measurement and
+own use.
 
 ### GitHub ubuntu-24.04 toolset
 
