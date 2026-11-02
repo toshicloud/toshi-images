@@ -74,7 +74,7 @@ mkdir "$tmp/collect-bin"
 for tool in bash jq awk grep mktemp rm; do ln -s "$(command -v "$tool")" "$tmp/collect-bin/$tool"; done
 cat >"$tmp/collect-bin/dpkg-query" <<'EOF'
 #!/usr/bin/env bash
-printf 'ii \talpha\t1\nrc \tremoved\t2\n'
+printf 'ii \talpha\t1\nhi \theld\t3\nrc \tremoved\t2\n'
 EOF
 cat >"$tmp/collect-bin/getent" <<'EOF'
 #!/usr/bin/env bash
@@ -93,7 +93,7 @@ expect 'absent optional tools degrade' '[],[],none' \
   "$(jq -r '[.services,.listening,.firewall] | map(if type == "string" then . else tojson end) | join(",")' "$tmp/collected.json")"
 expect 'collect users and packages' 'root,runner,systemlogin;alpha' \
   "$(jq -r '[.users[].name] | join(",")' "$tmp/collected.json");$(jq -r '.packages[0].name' "$tmp/collected.json")"
-expect 'collect excludes removed packages' 1 "$(jq '.packages | length' "$tmp/collected.json")"
+expect 'collect keeps held packages and excludes removed ones' 'alpha,held' "$(jq -r '[.packages[].name] | join(",")' "$tmp/collected.json")"
 cat >"$tmp/collect-bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 printf 'example.service enabled enabled\nignored.service disabled disabled\n'

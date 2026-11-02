@@ -66,11 +66,13 @@ die() {
 # prefix. Packer hands no file back from the build instance, so the fragment
 # crosses in this output.
 extract_manifest_fragment() {
-  awk -v begin="TOSHI-MANIFEST-BEGIN" -v end="TOSHI-MANIFEST-END" '
-    $0 ~ (begin "$") { inside = 1; next }
-    $0 ~ (end "$") { if (inside) exit }
-    inside' "$1" |
-    sed -E $'s/\e\\[[0-9;]*m//g; s/^[^:]*: //' |
+  # Packer colours its output: strip the escape codes and the source prefix
+  # first, so a marker is a whole line again.
+  sed -E $'s/\e\\[[0-9;]*m//g; s/\r$//; s/^[^:]*: //' "$1" |
+    awk -v begin="TOSHI-MANIFEST-BEGIN" -v end="TOSHI-MANIFEST-END" '
+      $0 == begin { inside = 1; next }
+      $0 == end { inside = 0; next }
+      inside' |
     grep -aE '^[A-Za-z0-9+/=]+$' |
     base64 -d
 }

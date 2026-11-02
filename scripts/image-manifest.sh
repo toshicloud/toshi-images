@@ -42,8 +42,10 @@ collect() (
   local tmp firewall=none passwd shells line name uid groups sudo file
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
+  # The second letter is the package's state; the first is what is wanted, so a
+  # held package (hi) is installed too.
   dpkg-query -W -f='${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' |
-    jq -Rn '[inputs | split("\t") | select(.[0] | startswith("ii")) | {name: .[1], version: .[2]}] | sort_by(.name, .version)' >"$tmp/packages.json"
+    jq -Rn '[inputs | split("\t") | select(.[0][1:2] == "i") | {name: .[1], version: .[2]}] | sort_by(.name, .version)' >"$tmp/packages.json"
   passwd=$(getent passwd)
   if [[ -r /etc/shells ]]; then
     shells=$(< /etc/shells)
