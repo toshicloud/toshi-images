@@ -14,6 +14,7 @@ on:
     paths:
       - service-agent/**
       - toolsets/lib.sh
+      - toolsets/apt-snapshot.sh
       - toolsets/versions.env
       - attest-sbom.sh
       - .github/workflows/service-agent.yml
@@ -24,6 +25,7 @@ on:
     paths:
       - service-agent/**
       - toolsets/lib.sh
+      - toolsets/apt-snapshot.sh
       - toolsets/versions.env
       - attest-sbom.sh
       - .github/workflows/service-agent.yml

@@ -31,8 +31,11 @@ cloud-init. It differs from the VM image in six ways:
 Its pinned inputs are the base image's digest (in the `Dockerfile`), the
 runner and toolsets with their SHA256s, and the Playwright release. The
 cloud image's manifest is read unpinned, but it only names packages; those
-packages, and the Chromium libraries Playwright lists, come from Ubuntu's
-archive, signed by Ubuntu's archive key but not pinned to exact versions.
+packages, and the Chromium libraries Playwright lists, come from the dated
+Ubuntu snapshot in `toolsets/versions.env`, signed by Ubuntu's archive key.
+A CA bundle is bootstrapped from the stock archive; it and its bootstrap
+dependencies are then replaced with the snapshot's versions. The finished
+image restores the stock sources and their package lists.
 
 | File | Purpose |
 |------|---------|

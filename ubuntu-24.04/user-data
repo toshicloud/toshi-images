@@ -17,6 +17,9 @@ write_files:
       # The helpers for a command that downloads: three tries, each with a
       # time limit (toolsets/lib.sh).
       . /mnt/seed/toolsets/lib.sh
+      /mnt/seed/toolsets/apt-snapshot.sh use /mnt/seed/toolsets/versions.env
+      SOURCE_DATE_EPOCH=$(/mnt/seed/toolsets/apt-snapshot.sh epoch /mnt/seed/toolsets/versions.env)
+      export SOURCE_DATE_EPOCH
       # Without --error-on=any apt-get update exits 0 when a mirror did not answer.
       DEBIAN_FRONTEND=noninteractive apt_get update --error-on=any
       # snapd, and udisks2 when it is still starting, hold up a shutdown on
@@ -111,6 +114,7 @@ write_files:
       # session, so the system units are disabled and masked and never listen.
       systemctl disable ssh.service ssh.socket
       systemctl mask ssh.service ssh.socket
+      /mnt/seed/toolsets/apt-snapshot.sh restore
       umount /mnt/seed
       echo "TOSHI-DF $(df -B1 --output=size,used,avail / | tail -1)" > /dev/ttyS0
       for d in /usr/lib/jvm /usr/libexec/docker /var/lib/docker /home/runner/.rustup /usr/local /usr/share/dotnet /usr/local/share/mise; do

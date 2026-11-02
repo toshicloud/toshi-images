@@ -116,9 +116,9 @@ show it.
 
 [`service-agent.yml`](../.github/workflows/service-agent.yml) keeps the
 `libraries` job for the intent-log libraries and adds three jobs. It runs on
-a pull request or a push to main that changes `service-agent/**`,
-`toolsets/lib.sh` or the workflow, on a dispatch, and on every release tag
-(`v*`).
+a pull request or a push to main that changes `service-agent/**`, the shared
+toolset helper, snapshot helper or pins, or the workflow, on a dispatch, and
+on every release tag (`v*`).
 
 The `image` job builds the image with `build.sh`, checks that the revision
 label is the run's commit, runs the smoke test, saves the image as a

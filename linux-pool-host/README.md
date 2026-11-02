@@ -4,8 +4,9 @@ The provisioning and the pins of the Linux cloud pool host images: the AMI
 that [`aws/linux-pool-host.pkr.hcl`](../aws/linux-pool-host.pkr.hcl)
 builds and the Compute Gallery image that `azure/linux-pool-host.pkr.hcl`
 builds. Each template uploads `provision.sh`, `versions.env`, `install.sh`,
-[`image-manifest.sh`](../scripts/image-manifest.sh) and the agent archive to
-the build instance and runs the same steps on it.
+[`image-manifest.sh`](../scripts/image-manifest.sh), the shared apt snapshot
+helper and its pins, and the agent archive to the build instance and runs the
+same steps on it.
 
 | File | What it is |
 |---|---|
@@ -23,14 +24,15 @@ provision.sh seal <aws|azure> [dir]
 
 `plan` needs no root, no network and no Azure or AWS account, which is why
 CI runs it on every change. `build` and `seal` run as root on the build
-instance; `<dir>` holds `versions.env`, `install.sh`, `image-manifest.sh`
-and the agent archive named in `TOSHI_AGENT_ASSET`, which the template
-uploads there.
+instance; `<dir>` holds `versions.env`, `toolsets.env`, `apt-snapshot.sh`,
+`install.sh`, `image-manifest.sh` and the agent archive named in
+`TOSHI_AGENT_ASSET`, which the template uploads there.
 
 `build` is the same on both clouds:
 
 - it waits for cloud-init to finish before changing anything;
-- it installs `HOST_PACKAGES` from the Ubuntu archive;
+- it installs `HOST_PACKAGES` from the dated Ubuntu archive snapshot, then
+  restores the stock apt sources after installing passt;
 - it installs passt from the pinned Ubuntu 26.04 package `PASST_URL`,
   checks its SHA-256, holds it, and stops unless its `--help` lists
   `--dns-host` and `--map-host-loopback`: Ubuntu 24.04's passt has neither;

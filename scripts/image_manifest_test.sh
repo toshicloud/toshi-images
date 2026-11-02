@@ -53,11 +53,12 @@ expect 'toolset versions' 'node:24.1,go:1.2' "$(jq -r '[.toolsets[] | .name + ":
 digest=$("$script" digest "$tmp/manifest.json")
 expect 'digest is stable' "$digest" "$("$script" digest "$tmp/manifest.json")"
 expect 'digest is sha256' 64 "${#digest}"
-jq '.built={date:"later",commit:"other"} | .image_digest="other" | .packages[].version="new"' "$tmp/manifest.json" >"$tmp/changed.json"
-expect 'digest ignores build, image and apt versions' "$digest" "$("$script" digest "$tmp/changed.json")"
-for field in package pin toolset; do
+jq '.built={date:"later",commit:"other"} | .image_digest="other"' "$tmp/manifest.json" >"$tmp/changed.json"
+expect 'digest ignores build and image digest' "$digest" "$("$script" digest "$tmp/changed.json")"
+for field in package package-version pin toolset; do
   case $field in
     package) filter='.packages[0].name="changed"' ;;
+    package-version) filter='.packages[0].version="changed"' ;;
     pin) filter='.pins[0].value="changed"' ;;
     toolset) filter='.toolsets[0].version="changed"' ;;
   esac

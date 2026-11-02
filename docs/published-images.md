@@ -71,18 +71,24 @@ The document holds:
 ### What the comparison compares
 
 The compared digest is the SHA-256 of a manifest's canonical form: keys
-sorted, `built` and `image_digest` removed, and every package `version`
-removed. Names, toolsets, users, services, listening ports, the firewall,
-the pins, the guest and the base all stay in.
+sorted, with `built` and `image_digest` removed. Package names and versions,
+toolsets, users, services, listening ports, the firewall, the pins, the guest
+and the base all stay in.
 
-Two builds from the same pins have the same compared digest. A package's
-version is left out on purpose: the images install from live Ubuntu, Docker
-and upstream mirrors, so versions move between builds without any pin
-changing. The image file's own digest is recorded but never compared,
-because the images are not reproducible today: no `SOURCE_DATE_EPOCH` and
-no apt snapshot, qcow2 compression, ext4 timestamps and the machine id, the
-live mirrors, and the Windows build date all change the bytes. Pinning apt
-to a snapshot is a follow-up; the package versions join the comparison then.
+Ubuntu apt installs use the dated archive snapshot in `APT_SNAPSHOT`, and
+their package versions participate in the compared digest. The snapshot is
+used only during the build; the shipped image has its stock sources. The
+container builds first install a CA bundle from the stock archive to reach
+the HTTPS snapshot, then replace it and its bootstrap dependencies with the
+snapshot's versions. An unchanged
+pin set is expected to produce the same compared digest, and the comparison
+reports any other drift. The image file's own digest is recorded but never
+compared: qcow2 compression, ext4 timestamps and machine-id churn, and the
+Windows build date can still change the image bytes.
+
+Canonical keeps snapshots for about two years. Advance `APT_SNAPSHOT` in
+`toolsets/versions.env` before it ages out; the next nightly comparison
+reports `pins changed` once.
 
 The scheduled Ubuntu build, and the container and service-agent builds on a
 release tag or a manual run, compare the fresh image with the last published
@@ -92,9 +98,9 @@ passes. An unchanged pin set with the same manifest digest passes. An
 unchanged pin set with a different manifest digest fails, with a diff of the
 two canonical forms showing what changed outside the pins.
 
-The nightly comparison covers the three images the workflows build and
-publish — `ubuntu-24.04`, `ubuntu-24.04-container` and `service-agent` — and
-the publish jobs attest their manifests. `linux-pool-host` and
+The workflows compare the three images they build and publish —
+`ubuntu-24.04`, `ubuntu-24.04-container` and `service-agent` — and the publish
+jobs attest their manifests. `linux-pool-host` and
 `windows-2025` write their manifests from the same scripts and the same
 fragment shape, but neither image is built in CI: their manifests are proven
 on their next manual build. The pool host is an AMI or a gallery image

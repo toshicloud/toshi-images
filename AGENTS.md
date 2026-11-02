@@ -8,9 +8,12 @@ change touches before your first change.
 1. **One directory per image.** Each holds its `build.sh`, its
    `versions.env` and a `README.md` that says what the build needs and how
    to run it. Shared install scripts live in `toolsets/`.
-2. **Every input is pinned.** Every file a build downloads has its URL,
-   version and SHA-256 in a `versions.env`, and a change moves all three
-   together. A download whose SHA-256 differs from its pin fails the build.
+2. **Pinned inputs.** Versioned tool downloads have their URL, version and
+   SHA-256 in a `versions.env`, and a change moves all three together. A
+   download whose SHA-256 differs from its pin fails the build.
+   Ubuntu packages come from the dated `APT_SNAPSHOT` in the shared pins;
+   the container builds bootstrap a CA bundle from the stock archive first
+   and then install the snapshot's versions of it and its dependencies.
 3. **What comes from Toshi is a published artefact.** This repository
    builds without Toshi's source. The guest helper is the OCI artefact
    that `guest.env` pins by version and digest, and `fetch-guest.sh` pulls

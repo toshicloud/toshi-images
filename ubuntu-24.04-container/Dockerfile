@@ -8,6 +8,7 @@ FROM ${BASE}
 # The Playwright release whose Chromium libraries the image carries; build.sh
 # reads it from versions.env.
 ARG PLAYWRIGHT_VERSION
+ARG SOURCE_DATE_EPOCH
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -20,9 +21,26 @@ COPY ubuntu-24.04-container/cloud-exclude.txt /opt/build/cloud-exclude.txt
 # pinned cloud image, minus its kernel, boot, firmware, hardware and init
 # packages (cloud-exclude.txt). The container base has few of them, and jobs
 # use some (gpg, envsubst). The manifest only names packages; apt checks each
-# package's signature.
+# package's signature. Bootstrap HTTPS with the stock CA package, then
+# replace every package that bootstrap changed with its snapshot version.
 RUN set -eux; . /opt/build/toolsets/lib.sh; . /opt/build/ubuntu-versions.env; \
-    apt_get update; \
+    dpkg-query -W -f='${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' | \
+        awk '$1 == "ii" { print $2 "=" $3 }' | LC_ALL=C sort > /opt/build/pre-bootstrap; \
+    apt_get update --error-on=any; \
+    apt_install --no-install-recommends ca-certificates; \
+    dpkg-query -W -f='${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' | \
+        awk '$1 == "ii" { print $2 "=" $3 }' | LC_ALL=C sort > /opt/build/post-bootstrap; \
+    apt-mark showauto > /opt/build/bootstrap-auto; \
+    /opt/build/toolsets/apt-snapshot.sh use /opt/build/toolsets/versions.env; \
+    apt_get update --error-on=any; \
+    bootstrap_packages=(); \
+    while IFS='=' read -r package _; do \
+        version=$(apt-cache madison "$package" | awk 'NR == 1 { print $3 }'); \
+        test -n "$version"; bootstrap_packages+=("$package=$version"); \
+    done < <(comm -13 /opt/build/pre-bootstrap /opt/build/post-bootstrap); \
+    test "${#bootstrap_packages[@]}" -gt 0; \
+    apt_install --no-install-recommends --allow-downgrades "${bootstrap_packages[@]}"; \
+    xargs -r apt-mark auto < /opt/build/bootstrap-auto; \
     apt_install --no-install-recommends curl ca-certificates; \
     fetch "${UBUNTU_IMAGE_URL%.img}.manifest" /opt/build/cloud.manifest; \
     awk '{print $1}' /opt/build/cloud.manifest | sed 's/:amd64$//' | sort -u | \
@@ -79,9 +97,12 @@ RUN set -eux; set -a; . /etc/environment; set +a; \
 # container (toshi-container-init).
 RUN runuser -u runner -- env -i HOME=/home/runner bash --noprofile --norc -c 'set -a; . /etc/environment; set +a; for c in qemu-system-x86_64 qemu-img genisoimage python3 pip3 node npm npx corepack go rustc cargo dotnet docker mise pnpm task golangci-lint buf goreleaser protoc-gen-go protoc-gen-connect-go java javac jar cmake clang pkg-config git-lfs yq gh zip unzip curl jq make gcc; do command -v "$c" >/dev/null || { echo "missing $c"; exit 1; }; done; docker buildx version >/dev/null && docker compose version >/dev/null && echo "TOOLSET env ok"'
 
-# The apt lists stay: a job that installs a package with sudo apt-get
-# install needs them, and the VM image, which deletes them, fails there.
-RUN rm -rf /opt/build
+# Restore the stock sources and their lists: sudo apt-get install needs the
+# lists, unlike the VM image which removes them before shipping.
+RUN set -eux; . /opt/build/toolsets/lib.sh; \
+    /opt/build/toolsets/apt-snapshot.sh restore; \
+    apt_get update --error-on=any; \
+    rm -rf /opt/build
 
 # No guest helper: the container provider bind-mounts the host's own, which
 # ships with the agent.

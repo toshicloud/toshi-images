@@ -43,7 +43,7 @@ export PATH="$tmp/bin:$PATH" ORAS_LOG="$tmp/oras.log" ORAS_MANIFEST="$tmp/publis
 cat >"$tmp/published.json" <<'EOF'
 {"image":"sample","built":{"date":"old"},"image_digest":"old","packages":[{"name":"alpha","version":"1"}],"pins":[{"file":"pin.env","key":"V","value":"1"}],"toolsets":[]}
 EOF
-jq '.built.date="new" | .image_digest="new" | .packages[0].version="2"' "$tmp/published.json" >"$tmp/new.json"
+jq '.built.date="new" | .image_digest="new"' "$tmp/published.json" >"$tmp/new.json"
 run() {
   rc=0
   output=$("$script" "$tmp/new.json" "$@" 2>&1) || rc=$?
@@ -61,6 +61,11 @@ run registry.invalid/image:current
 expect 'equal canonical manifests succeed' 0 "$rc"
 expect 'equal manifests reported' yes "$(grep -q 'manifests match' <<<"$output" && echo yes || echo no)"
 expect 'pull uses referrer digest' yes "$(grep -q 'pull .*registry.invalid/image@sha256:' "$ORAS_LOG" && echo yes || echo no)"
+jq '.packages[0].version="2"' "$tmp/new.json" >"$tmp/changed.json"
+mv "$tmp/changed.json" "$tmp/new.json"
+run registry.invalid/image:current
+expect 'changed package version fails with unchanged pins' 1 "$rc"
+expect 'version change appears in diff' yes "$(grep -q '+.*\"version\": \"2\"' <<<"$output" && echo yes || echo no)"
 jq '.pins[0].value="2" | .packages[0].name="different"' "$tmp/new.json" >"$tmp/changed.json"
 mv "$tmp/changed.json" "$tmp/new.json"
 run registry.invalid/image:current

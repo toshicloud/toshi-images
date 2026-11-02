@@ -74,7 +74,7 @@ if [[ $new_digest == "$old_digest" ]]; then
   exit 0
 fi
 echo 'image-manifest-compare: manifest changed with unchanged pins'
-jq -S 'del(.built, .image_digest, .packages[].version)' "$old" >"$tmp/old.json"
-jq -S 'del(.built, .image_digest, .packages[].version)' "$new" >"$tmp/new.json"
+jq -S 'del(.built, .image_digest)' "$old" >"$tmp/old.json"
+jq -S 'del(.built, .image_digest)' "$new" >"$tmp/new.json"
 diff -u --label published --label new "$tmp/old.json" "$tmp/new.json" || true
 exit 1
