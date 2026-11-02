@@ -15,6 +15,9 @@ OUT_DIR="${OUT_DIR:-${CACHE_DIR}/out}"
 WORK_DIR="${OUT_DIR}/work"
 SERIAL_LOG="${WORK_DIR}/serial.log"
 OUTPUT_IMAGE="${OUT_DIR}/ubuntu-24.04.qcow2"
+# The guest writes its manifest between these markers on the serial console.
+MANIFEST_BEGIN="TOSHI-MANIFEST-BEGIN"
+MANIFEST_END="TOSHI-MANIFEST-END"
 
 TOSHI_QEMU_ACCEL="${TOSHI_QEMU_ACCEL:-kvm}"
 BUILD_TIMEOUT="${BUILD_TIMEOUT:-1800}"
@@ -139,6 +142,19 @@ FAILED_CONTEXT_LINES=80
 
 serial_clean() {
   tr -d '\r' < "${SERIAL_LOG}" | sed -E $'s/\e\\[[0-9;]*m//g'
+}
+
+# toshi-finalize writes the image's contents between the markers, base64 with
+# 76 columns a line. Console output can share a line with the script's, so a
+# marker counts when the line ends with it, and only base64 lines between the
+# markers are decoded.
+extract_manifest_fragment() {
+  serial_clean | awk -v begin="${MANIFEST_BEGIN}" -v end="${MANIFEST_END}" '
+    $0 ~ (begin "$") { inside = 1; next }
+    $0 ~ (end "$") { if (inside) exit }
+    inside' \
+    | grep -aE '^[A-Za-z0-9+/=]+$' \
+    | base64 -d
 }
 
 # The line run_toolset (toolsets/lib.sh) prints for a toolset that failed.
@@ -308,6 +324,7 @@ require_cmd "${QEMU_IMG}"
 require_cmd genisoimage
 require_cmd curl
 require_cmd sha256sum
+require_cmd jq
 validate_accel
 if [[ ! "${TRY_MAX_TIME}" =~ ^[1-9][0-9]*$ ]]; then
   echo "TRY_MAX_TIME must be a number of seconds (got: ${TRY_MAX_TIME})" >&2
@@ -344,6 +361,9 @@ install -m 0755 "${TOSHI_GUEST_BIN}" "${seed_dir}/toshi-guest"
 cp "${runner_tarball}" "${seed_dir}/actions-runner-linux-x64.tar.gz"
 cp "${go_tarball}" "${seed_dir}/go.tar.gz"
 cp -r "${SCRIPT_DIR}/../toolsets" "${seed_dir}/toolsets"
+# The guest runs the manifest writer in toshi-finalize, after the seed has
+# been unmounted, so provisioning installs it into the image.
+cp "${SCRIPT_DIR}/../scripts/image-manifest.sh" "${seed_dir}/image-manifest.sh"
 # Railpack's pin file sits next to guest.env at the repository root, and its
 # toolset reads it from beside the toolsets.
 cp "${SCRIPT_DIR}/../railpack.env" "${seed_dir}/railpack.env"
@@ -401,3 +421,33 @@ echo "size on disk: ${disk_usage}, virtual size: ${virtual_size}"
 echo "sha256: ${image_sha256}"
 echo "toshi-guest version: ${TOSHI_GUEST_VERSION}"
 echo "build time: $((SECONDS - build_start_seconds))s"
+
+echo "step 9: write the image manifest"
+# The guest collected the image's own contents in toshi-finalize; here they
+# get what only the host knows: the pins it built from, the toolset versions
+# it checked, the pinned guest and the compressed image's own digest.
+fragment_file="${WORK_DIR}/manifest.fragment.json"
+manifest_file="${OUT_DIR}/manifest.json"
+if ! extract_manifest_fragment > "${fragment_file}"; then
+  echo "missing ${MANIFEST_BEGIN}/${MANIFEST_END} in ${SERIAL_LOG}" >&2
+  tail_serial_on_failure
+  exit 1
+fi
+if ! jq -e 'type == "object"' "${fragment_file}" >/dev/null 2>&1; then
+  echo "the guest's manifest in ${SERIAL_LOG} is not a JSON object" >&2
+  tail_serial_on_failure
+  exit 1
+fi
+# The toolset lines the guest printed; its commissioning's `TOOLSET env ok`
+# line reports the environment, not a toolset.
+grep -a '^TOOLSET ' "${SERIAL_LOG}" | tr -d '\r' | grep -av '^TOOLSET env ok$' > "${WORK_DIR}/toolsets.serial"
+"${SCRIPT_DIR}/../scripts/image-manifest.sh" assemble \
+  --image ubuntu-24.04 \
+  --fragment "${fragment_file}" \
+  --out "${manifest_file}" \
+  --pins "${SCRIPT_DIR}/versions.env" "${SCRIPT_DIR}/../toolsets/versions.env" "${SCRIPT_DIR}/../railpack.env" \
+  --toolsets "${WORK_DIR}/toolsets.serial" \
+  --guest-env "${SCRIPT_DIR}/../guest.env" \
+  --image-digest "sha256:${image_sha256}"
+echo "manifest: ${manifest_file}"
+echo "manifest digest: $("${SCRIPT_DIR}/../scripts/image-manifest.sh" digest "${manifest_file}")"

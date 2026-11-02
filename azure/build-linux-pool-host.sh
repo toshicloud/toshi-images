@@ -61,6 +61,20 @@ die() {
   exit 1
 }
 
+# The image's own contents as provision.sh printed them: base64 between the
+# markers, one line per line of Packer's output and behind Packer's source
+# prefix. Packer hands no file back from the build instance, so the fragment
+# crosses in this output.
+extract_manifest_fragment() {
+  awk -v begin="TOSHI-MANIFEST-BEGIN" -v end="TOSHI-MANIFEST-END" '
+    $0 ~ (begin "$") { inside = 1; next }
+    $0 ~ (end "$") { if (inside) exit }
+    inside' "$1" |
+    sed -E $'s/\e\\[[0-9;]*m//g; s/^[^:]*: //' |
+    grep -aE '^[A-Za-z0-9+/=]+$' |
+    base64 -d
+}
+
 action=build
 case "${1:-}" in
   -h | --help) usage; exit 0 ;;
@@ -164,6 +178,9 @@ else
 fi
 
 start=${SECONDS}
+# Packer's output is kept, and still shown: the image manifest fragment is
+# part of it.
+log="${work}/packer.log"
 "${PACKER}" build "${base_args[@]}" \
   -var "subscription_id=${AZURE_SUBSCRIPTION_ID}" \
   -var "gallery_resource_group=${AZURE_GALLERY_RESOURCE_GROUP}" \
@@ -174,9 +191,26 @@ start=${SECONDS}
   -var "build_resource_group_name=${AZURE_BUILD_RESOURCE_GROUP}" \
   -var "vm_size=${VM_SIZE}" \
   -var "os_disk_size_gb=${OS_DISK_SIZE_GB}" \
-  "$@" "${template}"
+  "$@" "${template}" 2>&1 | tee "${log}"
 
 version_id=$("${AZ}" sig image-version show "${definition[@]}" \
   --gallery-image-version "${IMAGE_VERSION}" --query id -o tsv)
 echo "image version ${version_id}, built in $((SECONDS - start)) s"
 echo "  az sig image-version show ${definition[*]} --gallery-image-version ${IMAGE_VERSION}"
+
+# The image manifest: the build instance's contents, the pins this build read
+# and the commit it came from.
+command -v jq >/dev/null || die "jq not found"
+image_manifest="${SCRIPT_DIR}/linux-pool-host-manifest.json"
+fragment="${work}/manifest-fragment.json"
+extract_manifest_fragment "${log}" >"${fragment}" ||
+  die "missing TOSHI-MANIFEST-BEGIN/TOSHI-MANIFEST-END in ${log}"
+jq -e 'type == "object"' "${fragment}" >/dev/null 2>&1 ||
+  die "the image manifest fragment in ${log} is not a JSON object"
+bash "${SCRIPT_DIR}/../scripts/image-manifest.sh" assemble \
+  --image linux-pool-host \
+  --fragment "${fragment}" \
+  --out "${image_manifest}" \
+  --pins "${SCRIPT_DIR}/../linux-pool-host/versions.env" "${SCRIPT_DIR}/../toolsets/versions.env"
+echo "manifest: ${image_manifest}"
+echo "manifest digest: $(bash "${SCRIPT_DIR}/../scripts/image-manifest.sh" digest "${image_manifest}")"

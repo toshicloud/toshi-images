@@ -45,6 +45,8 @@ write_files:
       # guest needs no backport, unlike the Debian-13 hosts.
       DEBIAN_FRONTEND=noninteractive apt_install --no-install-recommends passt
       install -m0755 /mnt/seed/toshi-guest /usr/local/bin/toshi-guest
+      # The manifest writer toshi-finalize runs from the sealed image.
+      install -m0755 /mnt/seed/image-manifest.sh /usr/local/sbin/image-manifest.sh
       install -m0644 /mnt/seed/toshi-guest.service /etc/systemd/system/toshi-guest.service
       # On EC2 the runner comes from the instance's user data instead.
       install -m0644 /mnt/seed/toshi-guest-userdata.service /etc/systemd/system/toshi-guest-userdata.service
@@ -134,6 +136,15 @@ write_files:
       rm -rf /tmp/* /var/tmp/*
       sync
       fstrim -av || true
+      # The sealed image's contents, for the manifest published beside the
+      # qcow2: base64 between markers, a line at a time, so build.sh can tell
+      # it from the console's other output.
+      manifest=$(/usr/local/sbin/image-manifest.sh collect | base64)
+      {
+        echo "TOSHI-MANIFEST-BEGIN"
+        printf '%s\n' "$manifest"
+        echo "TOSHI-MANIFEST-END"
+      } > /dev/ttyS0
       echo "TOSHI-IMAGE-BUILD: DONE" > /dev/ttyS0
       systemctl poweroff
   - path: /etc/polkit-1/rules.d/50-toshi-docker.rules

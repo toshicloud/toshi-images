@@ -3,8 +3,9 @@
 The provisioning and the pins of the Linux cloud pool host images: the AMI
 that [`aws/linux-pool-host.pkr.hcl`](../aws/linux-pool-host.pkr.hcl)
 builds and the Compute Gallery image that `azure/linux-pool-host.pkr.hcl`
-builds. Each template uploads `provision.sh`, `versions.env`, `install.sh`
-and the agent archive to the build instance and runs the same steps on it.
+builds. Each template uploads `provision.sh`, `versions.env`, `install.sh`,
+[`image-manifest.sh`](../scripts/image-manifest.sh) and the agent archive to
+the build instance and runs the same steps on it.
 
 | File | What it is |
 |---|---|
@@ -22,8 +23,9 @@ provision.sh seal <aws|azure> [dir]
 
 `plan` needs no root, no network and no Azure or AWS account, which is why
 CI runs it on every change. `build` and `seal` run as root on the build
-instance; `<dir>` holds `versions.env`, `install.sh` and the agent archive
-named in `TOSHI_AGENT_ASSET`, which the template uploads there.
+instance; `<dir>` holds `versions.env`, `install.sh`, `image-manifest.sh`
+and the agent archive named in `TOSHI_AGENT_ASSET`, which the template
+uploads there.
 
 `build` is the same on both clouds:
 
@@ -42,7 +44,19 @@ named in `TOSHI_AGENT_ASSET`, which the template uploads there.
 - it checks that QEMU, `qemu-img`, passt, nft and OVMF are in place;
 - on Azure it also reads the base image's `datasource_list`, its
   `waagent.conf` settings and its `resolv.conf` symlink, and refuses a base
-  image that differs from Canonical's.
+  image that differs from Canonical's;
+- at the end, before `seal`, it collects the image's manifest with
+  `image-manifest.sh collect` and prints it between `TOSHI-MANIFEST-BEGIN`
+  and `TOSHI-MANIFEST-END`, base64 a line at a time.
+
+Packer hands no file back from the build instance, so the manifest fragment
+crosses in the template's output, which `aws/build-linux-pool-host.sh` and
+`azure/build-linux-pool-host.sh` keep. Each then assembles
+`linux-pool-host-manifest.json` beside the Packer manifest: the image's
+contents, the pins in `versions.env` and `toolsets/versions.env`, and the
+commit the build came from. `image_digest` and `base` are empty there: an
+AMI and a gallery image version have no byte digest when the image is made.
+`jq` is in `HOST_PACKAGES` because `collect` reads the image with it.
 
 `seal` differs by cloud. On AWS it clears cloud-init's state and logs, the
 machine id, the SSH host keys and the build's key. On Azure it clears

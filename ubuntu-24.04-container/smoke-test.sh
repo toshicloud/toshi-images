@@ -3,24 +3,70 @@
 # Sysbox, so the entrypoint's dockerd is not started: the image's version
 # label, the runner's version, each toolset's version against
 # toolsets/versions.env, sudo for runner, and the commands and packages the
-# recipe needs.
-# Usage: ubuntu-24.04-container/smoke-test.sh [image]
+# recipe needs. Then writes the image manifest (docs/published-images.md).
+# Usage: ubuntu-24.04-container/smoke-test.sh [image [manifest]]
 # The pins come from the env files the container reads at run time.
 # shellcheck disable=SC1091,SC2153
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 
+# write_manifest IMAGE OUT reads the image's packages, users, services,
+# listening sockets and firewall inside it, as root, and assembles them on
+# the host with the pins the build used. The image carries jq, which the
+# collector reads dpkg's output with.
+write_manifest() (
+	local image=$1 out=$2 tmp t
+	tmp=$(mktemp -d)
+	trap 'rm -rf "$tmp"' EXIT
+	mkdir -p "$(dirname -- "$out")"
+	cp "$here/../scripts/image-manifest.sh" "$tmp/image-manifest.sh"
+	docker run --rm --user 0 --entrypoint /bin/bash \
+		-v "$tmp:/opt/manifest:ro" \
+		"$image" /opt/manifest/image-manifest.sh collect >"$tmp/fragment.json"
+	# The image installs every toolset in TOOLSETS at the version
+	# toolsets/versions.env pins.
+	(
+		cd "$here/.."
+		set -a
+		. toolsets/lib.sh
+		. toolsets/versions.env
+		. railpack.env
+		set +a
+		for t in $TOOLSETS; do
+			printf 'TOOLSET %s %s\n' "$t" "$(toolset_pin "$t")"
+		done
+	) >"$tmp/toolsets.env"
+	# The subshell above only prints toolset lines; out is the caller's.
+	# shellcheck disable=SC2031
+	"$here/../scripts/image-manifest.sh" assemble \
+		--image ubuntu-24.04-container \
+		--fragment "$tmp/fragment.json" \
+		--out "$out" \
+		--base "$(sed -n 's/^ARG BASE=//p' "$here/Dockerfile")" \
+		--pins "$here/versions.env" "$here/../toolsets/versions.env" \
+		"$here/../ubuntu-24.04/versions.env" "$here/../railpack.env" \
+		--toolsets "$tmp/toolsets.env" \
+		--guest-env "$here/../guest.env" \
+		--image-digest "$(docker image inspect -f '{{.Id}}' "$image")"
+)
+
 if [[ ${1:-} != --inside ]]; then
 	image=${1:-toshi-runner:ubuntu-24.04}
+	manifest=${2:-manifest.json}
 	label=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
-	exec docker run --rm --user runner --entrypoint /bin/bash \
+	rc=0
+	docker run --rm --user runner --entrypoint /bin/bash \
 		-e IMAGE_VERSION="$label" \
 		-v "$here/smoke-test.sh:/opt/smoke/smoke-test.sh:ro" \
 		-v "$here/Dockerfile:/opt/smoke/Dockerfile:ro" \
 		-v "$here/../toolsets/versions.env:/opt/smoke/toolsets.env:ro" \
 		-v "$here/../railpack.env:/opt/smoke/railpack.env:ro" \
 		-v "$here/../ubuntu-24.04/versions.env:/opt/smoke/ubuntu.env:ro" \
-		"$image" /opt/smoke/smoke-test.sh --inside
+		"$image" /opt/smoke/smoke-test.sh --inside || rc=$?
+	((rc == 0)) || exit "$rc"
+	write_manifest "$image" "$manifest"
+	echo "manifest written: ${manifest}"
+	exit 0
 fi
 
 # In the container, as runner, with the environment a job gets.

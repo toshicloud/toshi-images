@@ -60,7 +60,7 @@ jobs:
           set -f
           # Every path the Ubuntu build, its boot proof and the fail-fast
           # cases read, and this workflow, whose steps they are.
-          read -r -a inputs <<< "ubuntu-24.04/** toolsets/** guest.env railpack.env fetch-guest.sh mise.toml mise.lock .github/workflows/images.yml"
+          read -r -a inputs <<< "ubuntu-24.04/** toolsets/** guest.env railpack.env fetch-guest.sh scripts/image-manifest.sh mise.toml mise.lock .github/workflows/images.yml"
           run_all() {
             echo "### $1" >> "$GITHUB_STEP_SUMMARY"
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -164,6 +164,10 @@ jobs:
     if: needs.changed.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      contents: read
+      # The nightly comparison reads the published image's manifest.
+      packages: read
     outputs:
       image-sha256: ${{ steps.build.outputs.sha256 }}
       guest-version: ${{ steps.build.outputs.guest-version }}
@@ -217,6 +221,24 @@ jobs:
 
       - name: Toolset versions
         run: grep -a '^TOOLSET ' "$RUNNER_TEMP/images/work/serial.log" | tr -d '\r'
+
+      # The nightly and dispatch runs compare this image's manifest with the one
+      # published beside the newest release: the same pin set with a different
+      # manifest digest means the image changed outside the pins.
+      - name: Compare the manifest with the published one
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # oras reads its authentication from this directory's docker config,
+          # which exists only for this step.
+          registry_dir=$(mktemp -d -p "$RUNNER_TEMP")
+          export DOCKER_CONFIG="$registry_dir"
+          trap 'rm -rf "$registry_dir"' EXIT
+          printf '%s\n' "$GITHUB_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          scripts/image-manifest-compare.sh "$RUNNER_TEMP/images/manifest.json" \
+            --newest-tag "ghcr.io/${GITHUB_REPOSITORY}/ubuntu-24.04"
 
       - name: Boot proof over user-mode networking
         env:
@@ -329,6 +351,7 @@ jobs:
           path: |
             ${{ runner.temp }}/images/ubuntu-24.04.qcow2
             ${{ runner.temp }}/images/ubuntu-24.04.spdx.json
+            ${{ runner.temp }}/images/manifest.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -403,6 +426,15 @@ jobs:
             exit 1
           fi
           echo "${SBOM_SHA256}  ubuntu-24.04.spdx.json" | sha256sum -c -
+          if [[ ! -s manifest.json ]]; then
+            echo "::error::the ubuntu-24-04 job uploaded no manifest.json"
+            exit 1
+          fi
+          if ! jq -e --arg digest "sha256:${WANT}" '.image == "ubuntu-24.04" and .image_digest == $digest' \
+              manifest.json > /dev/null; then
+            echo "::error::manifest.json does not describe the image being published"
+            exit 1
+          fi
           ref="ghcr.io/${GITHUB_REPOSITORY}/ubuntu-24.04"
           registry_dir=$(mktemp -d -p "$RUNNER_TEMP")
           export DOCKER_CONFIG="$registry_dir"
@@ -460,6 +492,13 @@ jobs:
           cosign sign --yes "$pinned"
           ./attest-sbom.sh predicate "$pinned" "$RUNNER_TEMP/image/ubuntu-24.04.spdx.json" "$identity" \
             "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/image.sbom.sigstore.json"
+          # The manifest attests what the image contains, beside the SBOM of the
+          # files it contains, and is readable without pulling the image.
+          ./attest-sbom.sh manifest "$pinned" "$RUNNER_TEMP/image/manifest.json" "$identity" \
+            "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/image.manifest.sigstore.json"
+          oras attach --no-tty --registry-config "$registry_config" \
+            --artifact-type application/vnd.toshi.image-manifest.v1+json \
+            "$pinned" "$RUNNER_TEMP/image/manifest.json:application/json"
           cosign attest --yes --type slsaprovenance1 --predicate "$RUNNER_TEMP/image.provenance.json" "$pinned"
           cosign verify --timeout 90s \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
@@ -472,7 +511,7 @@ jobs:
           {
             echo "published and verified ubuntu-24.04 ${VERSION}: ${pinned}"
             echo "ubuntu-24.04.qcow2 sha256 ${WANT}, toshi-guest ${GUEST_VERSION}"
-            echo "keyless signature, subject-bound SPDX SBOM and SLSA v1 provenance; sign/attest/verify: ${SECONDS} s"
+            echo "keyless signature, subject-bound SPDX SBOM, image manifest attestation and SLSA v1 provenance; sign/attest/verify: ${SECONDS} s"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
   build-fails-fast:
@@ -498,7 +537,7 @@ jobs:
       - name: Install QEMU and ISO tools
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils genisoimage
+          sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils genisoimage jq
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

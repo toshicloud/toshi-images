@@ -213,6 +213,7 @@ build {
       "${local.config}/provision.sh",
       "${local.config}/versions.env",
       "${local.root}/../install.sh",
+      "${local.root}/../scripts/image-manifest.sh",
     ]
     destination = "/tmp/toshi/"
   }

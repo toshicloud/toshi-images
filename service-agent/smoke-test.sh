@@ -3,14 +3,49 @@
 # image's user, with a fresh named volume on /volume and HOME=/volume/home
 # (README.md, "The image"): the pinned versions, the CLIs' signed-out status,
 # the intent-log library in Python and TypeScript, a write to /volume and the
-# licence files.
-# Usage: service-agent/smoke-test.sh [image]
+# licence files. Then writes the image manifest (docs/published-images.md).
+# Usage: service-agent/smoke-test.sh [image [manifest]]
 # shellcheck disable=SC1091
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 
+# write_manifest IMAGE OUT reads the image's packages, users, services,
+# listening sockets and firewall inside it, as root, and assembles them on
+# the host with the pins the build used. The image carries no jq, which the
+# collector reads dpkg's output with, so the runner's jq and the libraries it
+# links are mounted read-only; the runner and the image both run Ubuntu 24.04.
+write_manifest() (
+	local image=$1 out=$2 tmp lib
+	tmp=$(mktemp -d)
+	trap 'rm -rf "$tmp"' EXIT
+	mkdir -p "$(dirname -- "$out")"
+	cp "$here/../scripts/image-manifest.sh" "$tmp/image-manifest.sh"
+	cp -L "$(command -v jq)" "$tmp/jq"
+	while IFS= read -r lib; do
+		case ${lib##*/} in
+		libjq.so.*|libonig.so.*) cp -L "$lib" "$tmp/" ;;
+		esac
+	done < <(ldd "$(command -v jq)" 2>/dev/null | awk '/=>/ {print $3}' || true)
+	docker run --rm --network none --user 0 --entrypoint /bin/bash \
+		-e LD_LIBRARY_PATH=/opt/manifest \
+		-v "$tmp:/opt/manifest:ro" \
+		"$image" -c 'PATH=/opt/manifest:$PATH exec /opt/manifest/image-manifest.sh collect' \
+		>"$tmp/fragment.json"
+	# The image runs no toolset scripts: its pins name every version it
+	# carries, so the manifest has no toolset list.
+	"$here/../scripts/image-manifest.sh" assemble \
+		--image service-agent \
+		--fragment "$tmp/fragment.json" \
+		--out "$out" \
+		--base "$(sed -n 's/^BASE_IMAGE=//p' "$here/versions.env")@$(sed -n 's/^BASE_DIGEST=//p' "$here/versions.env")" \
+		--pins "$here/../toolsets/versions.env" "$here/versions.env" \
+		--guest-env "$here/../guest.env" \
+		--image-digest "$(docker image inspect -f '{{.Id}}' "$image")"
+)
+
 if [[ ${1:-} != --inside ]]; then
 	image=${1:-toshi-service-agent:latest}
+	manifest=${2:-manifest.json}
 	label=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
 	volume="toshi-service-agent-smoke-$$"
 	docker volume create "$volume" >/dev/null
@@ -25,7 +60,10 @@ if [[ ${1:-} != --inside ]]; then
 		-v "$here/../toolsets/versions.env:/opt/smoke/toolsets.env:ro" \
 		-v "$here/lib:/opt/smoke/lib:ro" \
 		"$image" /opt/smoke/smoke-test.sh --inside || rc=$?
-	exit "$rc"
+	((rc == 0)) || exit "$rc"
+	write_manifest "$image" "$manifest"
+	echo "manifest written: ${manifest}"
+	exit 0
 fi
 
 # In the container, as the image's user, with no network.
