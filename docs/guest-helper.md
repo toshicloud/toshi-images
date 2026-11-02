@@ -23,9 +23,11 @@ image has no guest; [its README](../ubuntu-24.04-container/README.md) says why.
 A guest helper that Toshi publishes is pinned here by the `guest-pin`
 workflow, without a person in the chain: Toshi's `guest` workflow sends a
 `repository_dispatch` of type `guest-published` with the helper's version and
-digest, `guest-pin` writes both into `guest.env` on `main` and pushes the next
-`v0.1.N` tag, and the `pin-pr` workflow opens the pull request in Toshi that
+digest, `guest-pin` opens a pull request that writes both into `guest.env`
+(or updates the open one), the merge queue lands it, `guest-pin` then pushes
+the next `v0.1.N` tag on the pin commit, and the `pin-pr` workflow opens the pull request in Toshi that
 pins the images those tag runs published. A repeated dispatch with the same
-version and digest commits nothing and creates no tag; a failed build loses
+version and digest opens nothing, and a pin that already has a tag gets no
+second one; a failed build loses
 its tag again, so only a release that built has one. The tag-triggered
 publication is unchanged.

@@ -19,7 +19,8 @@ change touches before your first change.
    that `guest.env` pins by version and digest, and `fetch-guest.sh` pulls
    and checks it. A pin moves in a pull request of its own, except the
    guest helper's: the `guest-published` dispatch Toshi sends makes
-   `guest-pin` write that pin on `main` and push the next release tag. The
+   `guest-pin` open a pull request with that pin and, once it has merged, push
+   the next release tag. The
    guest's protocol and the host agent belong to Toshi.
 4. **Pinned tools.** `mise.toml` pins the scripts' tools and
    `mise.packer.toml` (with `MISE_ENV=packer`) adds Packer; each has its

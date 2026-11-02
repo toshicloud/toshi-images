@@ -3,20 +3,25 @@ name: guest-pin
 # The guest helper Toshi publishes is what the VM images carry. Toshi's guest
 # workflow sends this repository a repository_dispatch of type
 # guest-published, with the helper's version and digest in the payload; this
-# workflow pins them in guest.env on main and pushes the next release tag,
-# which starts the image build and publication the way a release tag always
-# has (images.yml and container.yml). The tag is pushed here, before its
-# build, and pin-pr.yml deletes it again when that build fails, so a failed
-# build leaves no tag. A second dispatch with the same version and digest
-# commits nothing and creates no tag.
+# workflow pins them in guest.env through a pull request that the merge queue
+# lands (main takes no direct push), or updates the open pin pull request.
+# Once a pin has merged, the push to main runs the second job, which pushes
+# the next release tag on the pin commit and so starts the image build and
+# publication the way a release tag always has (images.yml and
+# container.yml). pin-pr.yml deletes that tag again when its build fails, so a
+# failed build leaves no tag. A second dispatch with the same version and
+# digest opens nothing, and a merge that already has a tag creates none.
 #
-# The credential is a GitHub App installed on both repositories with contents
-# written; without it the job says so and succeeds. A dispatch of this
-# workflow with dry_run prints the pin and the tag it would create, writes
+# The credential is a GitHub App installed on this repository with contents
+# and pull requests written; without it the jobs say so and succeed. A
+# dispatch of this workflow with dry_run prints the pin it would open, writes
 # nothing, and needs no credential.
 on:
   repository_dispatch:
     types: [guest-published]
+  push:
+    branches: [main]
+    paths: [guest.env]
   workflow_dispatch:
     inputs:
       version:
@@ -28,7 +33,7 @@ on:
         type: string
         required: true
       dry_run:
-        description: Print the pin and the tag it would create, without writing
+        description: Print the pin it would open, without writing
         type: boolean
         default: true
 
@@ -40,6 +45,7 @@ concurrency:
 
 jobs:
   pin:
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -73,12 +79,12 @@ jobs:
           owner: toshicloud
           repositories: toshi-images
           permission-contents: write
+          permission-pull-requests: write
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.credential.outputs.present == 'true' || inputs.dry_run == true
         with:
-          ref: main
-          # A dry run reads the tags and guest.env only.
+          # A dry run reads guest.env only.
           token: ${{ steps.token.outputs.token || github.token }}
           fetch-depth: 0
           persist-credentials: true
@@ -90,9 +96,10 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-      - name: pin guest.env and tag the release
+      - name: pin guest.env in a pull request
         if: steps.credential.outputs.present == 'true' || inputs.dry_run == true
         env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           VERSION: ${{ github.event.client_payload.version || inputs.version }}
           DIGEST: ${{ github.event.client_payload.digest || inputs.digest }}
           DRY_RUN: ${{ inputs.dry_run }}
@@ -103,3 +110,61 @@ jobs:
             arguments+=(--dry-run)
           fi
           scripts/pin-guest-release.sh "$VERSION" "$DIGEST" "${arguments[@]}"
+
+  tag:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: credential
+        id: credential
+        env:
+          APP_ID: ${{ secrets.TOSHI_CHAIN_APP_ID }}
+          APP_KEY: ${{ secrets.TOSHI_CHAIN_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z $APP_ID || -z $APP_KEY ]]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: no credential, skipped
+        if: steps.credential.outputs.present != 'true'
+        run: |
+          echo "guest-pin: no credential, skipped"
+
+      # A tag pushed with the App's token starts the image build; one pushed
+      # with the workflow's own token would not.
+      - name: token for this repository
+        id: token
+        if: steps.credential.outputs.present == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.TOSHI_CHAIN_APP_ID }}
+          private-key: ${{ secrets.TOSHI_CHAIN_APP_PRIVATE_KEY }}
+          owner: toshicloud
+          repositories: toshi-images
+          permission-contents: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.credential.outputs.present == 'true'
+        with:
+          token: ${{ steps.token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: git identity
+        if: steps.credential.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: tag the merged guest pin
+        if: steps.credential.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          scripts/pin-guest-release.sh --tag
