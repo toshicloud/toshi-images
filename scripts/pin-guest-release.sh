@@ -48,6 +48,25 @@ fi
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
+# author_identity sets identity to the repository's author, taken from the
+# latest commit on the given revision that no bot wrote, as every pin on main
+# carries it, whatever identity the checkout has. The pin commit and the
+# release tag use it.
+identity=()
+identity_text=''
+author_identity() {
+  local line name email
+  line=$(git -C "$repo" log -n 200 --format='%an%x09%ae' "$1" | grep -vm1 '\[bot\]' || true)
+  name=${line%%$'\t'*}
+  email=${line#*$'\t'}
+  if [[ -z $line || -z $name || -z $email ]]; then
+    echo "pin-guest-release: no commit by an author on ${1} to take the identity from" >&2
+    return 1
+  fi
+  identity=(-c "user.name=${name}" -c "user.email=${email}")
+  identity_text="${name} <${email}>"
+}
+
 # next_tag prints the next release: one patch above the highest
 # v<major>.<minor>.<patch> tag. A tag with a suffix (a release candidate) is
 # not a base for the count.
@@ -90,7 +109,8 @@ if [[ $mode == tag ]]; then
     echo "pin-guest-release: would tag ${next} on ${pin} ('${subject}')"
     exit 0
   fi
-  git -C "$repo" tag -a "$next" -m "toshi-images ${next}: ${subject#chore(guest): pin }" "$pin"
+  author_identity HEAD
+  git -C "$repo" "${identity[@]}" tag -a "$next" -m "toshi-images ${next}: ${subject#chore(guest): pin }" "$pin"
   git -C "$repo" push -q origin "refs/tags/${next}"
   echo "pin-guest-release: tagged ${next} on ${pin} (started the image build)"
   exit 0
@@ -128,7 +148,13 @@ if [[ $dry_run != true ]]; then
     exit 1
   fi
   open=$(gh pr list --repo "$repository" --head "$branch" --state open --json number,title --jq '.[0] // empty | "\(.number) \(.title)"' || true)
-  if [[ $open == *" ${title}" ]]; then
+  # The open pull request's branch is left alone when it already pins this
+  # version under the repository's author; a pin by another identity is
+  # pushed again.
+  author_identity origin/main
+  git -C "$repo" fetch -q origin "$branch" 2>/dev/null || true
+  tip=$(git -C "$repo" log -1 --format='%an <%ae>' "origin/${branch}" 2>/dev/null || true)
+  if [[ $open == *" ${title}" && $tip == "$identity_text" ]]; then
     echo "pin-guest-release: pull request ${open%% *} already pins ${version}: nothing to do"
     exit 0
   fi
@@ -145,11 +171,12 @@ fi
 work=$(mktemp -d)
 body=$(mktemp)
 trap 'git -C "$repo" worktree remove --force "$work" 2>/dev/null || true; rm -rf "$work" "$body"' EXIT
+author_identity origin/main
 git -C "$repo" worktree add -q -B "$branch" "$work" origin/main
 sed -i "s|^TOSHI_GUEST_VERSION=.*|TOSHI_GUEST_VERSION=${version}|" "$work/guest.env"
 sed -i "s|^TOSHI_GUEST_DIGEST=.*|TOSHI_GUEST_DIGEST=${digest}|" "$work/guest.env"
 git -C "$work" add guest.env
-git -C "$work" commit -q -m "$title"
+git -C "$work" "${identity[@]}" commit -q -m "$title"
 git -C "$work" push -q --force origin "HEAD:refs/heads/${branch}"
 cat >"$body" <<EOF
 Pins the guest helper that Toshi published.
