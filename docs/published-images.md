@@ -60,7 +60,7 @@ The document holds:
 | `image` | the image kind: `ubuntu-24.04`, `ubuntu-24.04-container`, `service-agent`, `windows-2025` or `linux-pool-host` |
 | `built` | when and from which commit the build ran |
 | `base` | the base image's name and digest, when the build starts from a base pinned by digest |
-| `guest` | the guest helper the image carries: its version, its digest and the protocol range it supports |
+| `guest` | the guest helper the image carries: its version, its digest and the protocol range it supports (`protocol_min` and `protocol_max`, integers). The range is what the pinned `toshi-guest` prints for `version`; the `ubuntu-24.04` build reads it, and the other images, and a guest older than the one that prints a range, leave both `null` |
 | `packages` | every package the image has, by name and version |
 | `toolsets` | each toolset's version, as the image itself reports it |
 | `users` | local accounts, their groups, and what they can escalate to: `none`, `build-only` or `password-less` |

@@ -49,6 +49,35 @@ expect 'missing later pin file fails assembly' failed "$result"
 expect 'missing later pin file leaves no partial manifest' no "$([[ -e $tmp/incomplete.json ]] && echo yes || echo no)"
 expect 'base and guest fields' 'ubuntu,sha256:abcd,v1,sha256:guest,null,null' \
   "$(jq -r '[.base.name,.base.digest,.guest.version,.guest.digest,.guest.protocol_min,.guest.protocol_max] | map(tostring) | join(",")' "$tmp/manifest.json")"
+# The guest binary's own range: integers when it prints one, null when it
+# prints the version alone, null with a warning when it cannot run, and a
+# failed assemble when its version is not the pinned one.
+stub() {
+  printf '#!/usr/bin/env bash\necho "%s"\n' "$2" >"$tmp/$1"
+  chmod +x "$tmp/$1"
+}
+guest_manifest() {
+  "$script" assemble --image sample --fragment "$tmp/fragment.json" --out "$tmp/guest-$1.json" \
+    --guest-env "$tmp/guest.env" --guest-binary "$2" 2>"$tmp/guest-$1.err"
+}
+stub guest-new 'toshi-guest v1 protocol_min=1 protocol_max=6'
+guest_manifest new "$tmp/guest-new"
+expect 'guest range is read as integers' 'number,number,1,6' \
+  "$(jq -r '.guest | [(.protocol_min|type),(.protocol_max|type),.protocol_min,.protocol_max] | map(tostring) | join(",")' "$tmp/guest-new.json")"
+expect 'guest range keeps the pinned version and digest' 'v1,sha256:guest' \
+  "$(jq -r '.guest | [.version,.digest] | join(",")' "$tmp/guest-new.json")"
+stub guest-old 'toshi-guest v1'
+guest_manifest old "$tmp/guest-old"
+expect 'an older guest leaves the range null' 'null,null' \
+  "$(jq -r '.guest | [.protocol_min,.protocol_max] | map(tostring) | join(",")' "$tmp/guest-old.json")"
+guest_manifest missing "$tmp/no-such-guest"
+expect 'a guest that cannot run leaves the range null' 'null,null' \
+  "$(jq -r '.guest | [.protocol_min,.protocol_max] | map(tostring) | join(",")' "$tmp/guest-missing.json")"
+expect 'a guest that cannot run gives one warning line' 1 "$(grep -c 'warning' "$tmp/guest-missing.err")"
+stub guest-other 'toshi-guest v2 protocol_min=1 protocol_max=6'
+if guest_manifest other "$tmp/guest-other"; then result=success; else result=failed; fi
+expect 'a guest of another version fails assembly' failed "$result"
+expect 'a guest of another version leaves no manifest' no "$([[ -e $tmp/guest-other.json ]] && echo yes || echo no)"
 expect 'base without an id has no id field' null "$(jq -c '.base.id // null' "$tmp/manifest.json")"
 "$script" assemble --image sample --fragment "$tmp/fragment.json" --out "$tmp/cloud.json" \
   --base 'Canonical:ubuntu-24_04-lts:server' --base-id 24.04.202609260 --guest-env "$tmp/guest.env"
