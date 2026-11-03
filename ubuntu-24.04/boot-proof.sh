@@ -5,6 +5,10 @@
 # whether an outbound HTTPS request is answered. The host agent's QEMU
 # provider boots the image the same way: virtio disk and network, the
 # toshi.guest serial port, user-mode networking or passt.
+# When the build's manifest.json sits beside the image (or MANIFEST names
+# it), the guest also reports the properties the manifest declares, and
+# boot-proof-manifest.sh holds them to it. An image without a manifest is
+# proven as before, with a warning.
 # Usage: ubuntu-24.04/boot-proof.sh <image.qcow2> <user|passt>
 set -euo pipefail
 
@@ -54,6 +58,17 @@ if [[ -z "${EXPECT_RAILPACK_VERSION}" ]]; then
   echo "no Railpack version to expect: railpack.env pins none and EXPECT_RAILPACK_VERSION is unset" >&2
   exit 1
 fi
+MANIFEST="${MANIFEST:-$(dirname "${IMAGE}")/manifest.json}"
+manifest_users=""
+if [[ -f "${MANIFEST}" ]]; then
+  manifest_users=$("${SCRIPT_DIR}/boot-proof-manifest.sh" names "${MANIFEST}" | tr '\n' ' ')
+  if [[ -z "${manifest_users}" ]]; then
+    echo "the manifest at ${MANIFEST} lists no user" >&2
+    exit 1
+  fi
+else
+  echo "boot proof (${NETWORK}): warning: no manifest at ${MANIFEST}; the manifest's properties are not checked" >&2
+fi
 if [[ ! -w /dev/kvm ]]; then
   echo "/dev/kvm is missing or not writable: the boot proof runs only under KVM" >&2
   exit 1
@@ -96,6 +111,22 @@ runcmd:
     echo "TOSHI-PROOF: railpack_version \$("\$railpack_dir/\$railpack/railpack" --version | awk '{print \$NF}')" >/dev/ttyS0
     echo "TOSHI-PROOF: railpack_frontend \$(cat "\$railpack_dir/\$railpack/frontend.digest")" >/dev/ttyS0
     echo "TOSHI-PROOF: railpack_archive \$(tar -xOf "\$railpack_dir/\$railpack/frontend.tar" index.json | jq -r --arg version "\$railpack" '.manifests[] | select(.annotations["org.opencontainers.image.ref.name"] == \$version) | .digest')" >/dev/ttyS0
+    if [ -n "${manifest_users}" ]; then
+      for u in ${manifest_users}; do
+        if id "\$u" >/dev/null 2>&1; then
+          echo "TOSHI-PROOF: user \$u \$(id -u "\$u") \$(id -nG "\$u" | tr ' ' '\n' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/ \$//')" >/dev/ttyS0
+        else
+          echo "TOSHI-PROOF: user \$u missing" >/dev/ttyS0
+        fi
+      done
+      echo "TOSHI-PROOF: units \$(LC_ALL=C systemctl list-unit-files --state=enabled --type=service --no-legend --no-pager | awk 'NF >= 2 && \$2 == "enabled" {print \$1}' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/ \$//')" >/dev/ttyS0
+      if command -v nft >/dev/null; then
+        echo "TOSHI-PROOF: firewall \$(nft list ruleset 2>/dev/null | awk 'NF {n++} END {print n ? n " lines" : "none"}')" >/dev/ttyS0
+      else
+        echo "TOSHI-PROOF: firewall none" >/dev/ttyS0
+      fi
+      echo "TOSHI-PROOF: sshd \$(systemctl is-enabled ssh.service 2>&1 | head -n 1)" >/dev/ttyS0
+    fi
     echo "TOSHI-PROOF: DONE" >/dev/ttyS0
     systemctl poweroff
 USERDATA
@@ -218,5 +249,10 @@ railpack_expect_digest=${!railpack_digest_name:-}
   || fail "the frontend digest is '${railpack_frontend}', expected ${railpack_expect_digest}"
 [[ "${railpack_frontend}" == "${railpack_archive}" ]] \
   || fail "the frontend archive holds '${railpack_archive}', not ${railpack_frontend}"
+
+if [[ -f "${MANIFEST}" ]]; then
+  "${SCRIPT_DIR}/boot-proof-manifest.sh" check "${MANIFEST}" "${SERIAL_LOG}" \
+    || fail "the booted image differs from its manifest"
+fi
 
 echo "boot proof (${NETWORK}): proof in ${seconds} s; toshi-guest ${version} active; HTTPS ${PROOF_URL} ${https}; Railpack ${railpack_version}, frontend ${railpack_frontend}"
