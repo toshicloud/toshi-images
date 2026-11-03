@@ -206,10 +206,17 @@ ubuntu-24.04/boot-proof.sh $HOME/.cache/toshi-images/out/ubuntu-24.04.qcow2 user
 ubuntu-24.04/boot-proof.sh $HOME/.cache/toshi-images/out/ubuntu-24.04.qcow2 passt
 ```
 
+With the build's `manifest.json` beside the image, the boot also holds the
+booted image to it: the accounts with their uids and groups, the enabled
+service units, no firewall rule, sshd masked, and the guest helper's digest
+equal to the one `guest.env` pins. An image without a manifest is proven
+without these checks, with a warning.
+
 It reads these settings from the environment:
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
+| `MANIFEST` | `manifest.json` beside the image | the manifest the booted image is held to |
 | `EXPECT_GUEST_VERSION` | `TOSHI_GUEST_VERSION` from `guest.env` | the version the guest helper must report; set it for an image built with another `TOSHI_GUEST_BIN` |
 | `EXPECT_RAILPACK_VERSION` | `RAILPACK_VERSION` from `railpack.env` | the Railpack version the image must pin |
 | `BOOT_TIMEOUT` | `300` | seconds the guest has to report its proof |

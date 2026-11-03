@@ -25,7 +25,9 @@ The `images` jobs:
   the host agent uses. Each boot passes only if `toshi-guest.service` is
   active, the helper reports the pinned version, an outbound HTTPS request is
   answered, and the image's Railpack pin names a version whose CLI reports it
-  and whose frontend archive holds the digest beside it. The job summary
+  and whose frontend archive holds the digest beside it, and the booted
+  image matches its manifest: accounts, groups, enabled units, no firewall,
+  sshd masked and the pinned guest digest. The job summary
   carries one line per boot, and
   except on a pull request the built `ubuntu-24.04.qcow2` is kept as a
   workflow artifact for a day; the run's logs are kept for seven.
