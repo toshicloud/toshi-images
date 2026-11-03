@@ -499,9 +499,10 @@ jobs:
           # files it contains, and is readable without pulling the image.
           ./attest-sbom.sh manifest "$pinned" "$RUNNER_TEMP/image/manifest.json" "$identity" \
             "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/image.manifest.sigstore.json"
-          oras attach --no-tty --registry-config "$registry_config" \
+          # oras refuses an absolute file path: attach from the manifest's directory.
+          (cd "$RUNNER_TEMP/image" && oras attach --no-tty --registry-config "$registry_config" \
             --artifact-type application/vnd.toshi.image-manifest.v1+json \
-            "$pinned" "$RUNNER_TEMP/image/manifest.json:application/json"
+            "$pinned" manifest.json:application/json)
           cosign attest --yes --type slsaprovenance1 --predicate "$RUNNER_TEMP/image.provenance.json" "$pinned"
           cosign verify --timeout 90s \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \

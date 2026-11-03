@@ -363,8 +363,9 @@ jobs:
             "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/service-agent.sbom.sigstore.json"
           ./attest-sbom.sh manifest "$PINNED" "$RUNNER_TEMP/manifest/manifest.json" "$identity" \
             "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/service-agent.manifest.sigstore.json"
-          oras attach --artifact-type application/vnd.toshi.image-manifest.v1+json "$PINNED" \
-            "$RUNNER_TEMP/manifest/manifest.json:application/json"
+          # oras refuses an absolute file path: attach from the manifest's directory.
+          (cd "$RUNNER_TEMP/manifest" && oras attach --artifact-type application/vnd.toshi.image-manifest.v1+json \
+            "$PINNED" manifest.json:application/json)
           cosign attest --yes --type slsaprovenance1 --predicate "$RUNNER_TEMP/service-agent.provenance.json" "$PINNED"
           cosign verify --timeout 90s \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
@@ -482,8 +483,9 @@ jobs:
             "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/service-agent.sbom.sigstore.json"
           ./attest-sbom.sh manifest "$PINNED" "$RUNNER_TEMP/manifest/manifest.json" "$identity" \
             "$RUNNER_TEMP/rekor-v2.json" "$RUNNER_TEMP/service-agent.manifest.sigstore.json"
-          oras attach --plain-http --artifact-type application/vnd.toshi.image-manifest.v1+json "$PINNED" \
-            "$RUNNER_TEMP/manifest/manifest.json:application/json"
+          # oras refuses an absolute file path: attach from the manifest's directory.
+          (cd "$RUNNER_TEMP/manifest" && oras attach --plain-http \
+            --artifact-type application/vnd.toshi.image-manifest.v1+json "$PINNED" manifest.json:application/json)
           bytes=$(wc -c < "$RUNNER_TEMP/service-agent.spdx.json")
           packages=$(jq '.packages | length' "$RUNNER_TEMP/service-agent.spdx.json")
           echo "SPDX SBOM: ${bytes} bytes, ${packages} packages" | tee -a "$GITHUB_STEP_SUMMARY"
