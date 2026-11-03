@@ -72,9 +72,12 @@ validate_accel() {
 require_guest_bin() {
   # The guest pinned in ../guest.env, unless TOSHI_GUEST_BIN names another
   # linux/amd64 toshi-guest, such as a local build.
+  # Only the pinned guest is read for the manifest's protocol range.
+  GUEST_BIN_PINNED=''
   if [[ -z "${TOSHI_GUEST_BIN:-}" ]]; then
     "${SCRIPT_DIR}/../fetch-guest.sh" "${OUT_DIR}/guest"
     TOSHI_GUEST_BIN="${OUT_DIR}/guest/toshi-guest"
+    GUEST_BIN_PINNED=1
   fi
   if [[ ! -f "${TOSHI_GUEST_BIN}" ]]; then
     echo "TOSHI_GUEST_BIN must point to an existing linux/amd64 toshi-guest binary" >&2
@@ -477,6 +480,7 @@ fi
   --pins "${pins[@]}" \
   --toolsets "${WORK_DIR}/toolsets.serial" \
   --guest-env "${SCRIPT_DIR}/../guest.env" \
+  ${GUEST_BIN_PINNED:+--guest-binary "${TOSHI_GUEST_BIN}"} \
   --image-digest "sha256:${image_sha256}"
 echo "manifest: ${manifest_file}"
 echo "manifest digest: $("${SCRIPT_DIR}/../scripts/image-manifest.sh" digest "${manifest_file}")"

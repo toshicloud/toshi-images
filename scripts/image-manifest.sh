@@ -2,7 +2,7 @@
 # Collect image contents and assemble or hash a Toshi image manifest.
 set -euo pipefail
 
-usage='usage: image-manifest.sh collect | assemble --image NAME --fragment FILE --out FILE [--base NAME[@sha256:DIGEST]] [--base-id ID] [--pins FILE ...] [--toolsets FILE] [--guest-env FILE] [--image-digest SHA] | digest FILE | pinset FILE'
+usage='usage: image-manifest.sh collect | assemble --image NAME --fragment FILE --out FILE [--base NAME[@sha256:DIGEST]] [--base-id ID] [--pins FILE ...] [--toolsets FILE] [--guest-env FILE] [--guest-binary FILE] [--image-digest SHA] | digest FILE | pinset FILE'
 
 canonical() {
   jq -S -c 'del(.built, .image_digest)' "$1"
@@ -119,17 +119,49 @@ resolved_pins() {
   } | bash
 }
 
+# guest_protocol adds the protocol range the guest binary reports to the
+# manifest's guest object (arguments: the binary, the object). A guest that
+# prints "toshi-guest <version> protocol_min=<n> protocol_max=<n>" gives both
+# as integers; one that prints the version alone, or that cannot be run here,
+# leaves both null (the second with a warning). A version that differs from
+# the one the object pins is an error: the manifest must not lie.
+guest_protocol() {
+  local binary=$1 guest=$2 line version pinned min max
+  if ! line=$(timeout 10 "$binary" version 2>/dev/null | head -n 1) || [[ -z $line ]]; then
+    echo "image-manifest: warning: ${binary} could not be run, so the guest protocol range is null" >&2
+    printf '%s\n' "$guest"
+    return 0
+  fi
+  version=$(awk '$1 == "toshi-guest" {print $2}' <<<"$line")
+  pinned=$(jq -r '.version // empty' <<<"$guest")
+  if [[ -z $version ]]; then
+    echo "image-manifest: ${binary} printed '${line}', not a toshi-guest version line" >&2
+    return 1
+  fi
+  if [[ -n $pinned && $version != "$pinned" ]]; then
+    echo "image-manifest: ${binary} reports version '${version}', guest.env pins ${pinned}" >&2
+    return 1
+  fi
+  min=$(sed -n 's/.* protocol_min=\([0-9][0-9]*\)\( .*\)\{0,1\}$/\1/p' <<<"$line")
+  max=$(sed -n 's/.* protocol_max=\([0-9][0-9]*\)\( .*\)\{0,1\}$/\1/p' <<<"$line")
+  if [[ -z $min || -z $max ]]; then
+    printf '%s\n' "$guest"
+    return 0
+  fi
+  jq -c --argjson min "$min" --argjson max "$max" '.protocol_min = $min | .protocol_max = $max' <<<"$guest"
+}
+
 assemble() (
-  local image='' fragment='' out='' base='' toolsets='' guest_env='' image_digest=''
+  local image='' fragment='' out='' base='' toolsets='' guest_env='' guest_binary='' image_digest=''
   local base_name='' base_digest='' base_id='' commit date tmp
   local -a pins=()
   while (($#)); do
     case $1 in
-      --image|--fragment|--out|--base|--base-id|--toolsets|--guest-env|--image-digest)
+      --image|--fragment|--out|--base|--base-id|--toolsets|--guest-env|--guest-binary|--image-digest)
         (($# >= 2)) || { echo "$usage" >&2; return 2; }
         case $1 in
           --image) image=$2 ;; --fragment) fragment=$2 ;; --out) out=$2 ;;
-          --base) base=$2 ;; --base-id) base_id=$2 ;; --toolsets) toolsets=$2 ;; --guest-env) guest_env=$2 ;;
+          --base) base=$2 ;; --base-id) base_id=$2 ;; --toolsets) toolsets=$2 ;; --guest-env) guest_env=$2 ;; --guest-binary) guest_binary=$2 ;;
           --image-digest) image_digest=$2 ;;
         esac
         shift 2 ;;
@@ -152,8 +184,8 @@ assemble() (
       base_name=$base
     fi
   fi
+  local guest_json
   if [[ -n $guest_env ]]; then
-    local guest_json
     guest_json=$(
       unset TOSHI_GUEST_VERSION TOSHI_GUEST_DIGEST
       [[ $guest_env == */* ]] || guest_env=./$guest_env
@@ -164,6 +196,9 @@ assemble() (
     )
   else
     guest_json='{"version":null,"digest":null,"protocol_min":null,"protocol_max":null}'
+  fi
+  if [[ -n $guest_binary ]]; then
+    guest_json=$(guest_protocol "$guest_binary" "$guest_json") || return 1
   fi
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
