@@ -26,13 +26,15 @@ expect() {
 
 version=v0.1.0-rc.3-843-g40e6dac1f
 digest=sha256:ef638e69e3ba81e1fe34855b81d877df60917b5a312a5cf52f933fc5e3c713f1
+author_name="Repo Author"
+author_email=author@example.invalid
 other_digest=sha256:1111111111111111111111111111111111111111111111111111111111111111
 
 git init -q --bare "$tmp/origin.git"
 git init -q -b main "$tmp/repo"
 cd "$tmp/repo"
-git config user.name test
-git config user.email test@example.invalid
+git config user.name someone-else
+git config user.email someone@example.invalid
 mkdir -p scripts
 cp "$script" scripts/pin-guest-release.sh
 cat >guest.env <<'EOF'
@@ -42,7 +44,8 @@ TOSHI_GUEST_VERSION=e8d651ef2
 TOSHI_GUEST_DIGEST=sha256:2222222222222222222222222222222222222222222222222222222222222222
 EOF
 git add .
-git commit -q -m 'chore: fixture'
+GIT_AUTHOR_NAME=$author_name GIT_AUTHOR_EMAIL=$author_email git commit -q -m 'chore: fixture'
+GIT_AUTHOR_NAME="ci[bot]" GIT_AUTHOR_EMAIL=bot@example.invalid git commit -q --allow-empty -m 'chore: by a bot'
 git tag -a v0.1.8 -m v0.1.8
 git tag -a v0.1.9 -m v0.1.9
 git remote add origin "$tmp/origin.git"
@@ -93,6 +96,8 @@ expect 'pin: exit 0' 0 "$rc"
 expect 'pin: guest/pin is on origin' yes "$(branch_on_origin)"
 expect 'pin: the branch carries the version' "$version" "$(origin_env)"
 expect 'pin: the branch carries the digest' "$digest" "$(git --git-dir="$tmp/origin.git" show guest/pin:guest.env | sed -n 's/^TOSHI_GUEST_DIGEST=//p')"
+expect 'pin: the commit author' "$author_name <$author_email>" "$(git --git-dir="$tmp/origin.git" log -1 --format='%an <%ae>' guest/pin)"
+expect 'pin: the commit committer' "$author_name <$author_email>" "$(git --git-dir="$tmp/origin.git" log -1 --format='%cn <%ce>' guest/pin)"
 expect 'pin: the commit subject' "chore(guest): pin ${version}" "$(git --git-dir="$tmp/origin.git" log -1 --format=%s guest/pin)"
 expect 'pin: main on origin untouched' "$main_before" "$(git --git-dir="$tmp/origin.git" rev-parse refs/heads/main)"
 expect 'pin: no tag' "$before_tags" "$(tags)"
@@ -107,6 +112,18 @@ run "$version" "$digest"
 expect 'repeat: exit 0' 0 "$rc"
 expect 'repeat: says nothing to do' yes "$(grep -q 'nothing to do' <<<"$output" && echo yes || echo no)"
 expect 'repeat: no create or edit' 0 "$(grep -c 'pr create\|pr edit' "$GH_LOG" || true)"
+
+# The open pull request's branch pinned under another identity: the same pin
+# is pushed again with the repository's author, and the pull request kept.
+git clone -q "$tmp/origin.git" "$tmp/other"
+git -C "$tmp/other" switch -q guest/pin
+git -C "$tmp/other" -c user.name=bot -c user.email=bot@example.invalid commit -q --amend --reset-author --no-edit
+git -C "$tmp/other" push -q --force origin guest/pin
+: >"$GH_LOG"
+run "$version" "$digest"
+expect 'wrong author: exit 0' 0 "$rc"
+expect 'wrong author: the open pull request is edited' yes "$(grep -q 'pr edit 7 ' "$GH_LOG" && echo yes || echo no)"
+expect 'wrong author: the branch has the repository author' "$author_name <$author_email>" "$(git --git-dir="$tmp/origin.git" log -1 --format='%an <%ae>' guest/pin)"
 
 # A newer version updates the open pull request.
 : >"$GH_LOG"
@@ -139,6 +156,7 @@ run --tag
 expect 'tag: exit 0' 0 "$rc"
 expect 'tag: one new tag' "$((before_tags + 1))" "$(tags)"
 expect 'tag: names the pin commit' "$(git rev-parse HEAD)" "$(git rev-parse 'v0.1.10^{commit}')"
+expect 'tag: the tagger' "$author_name <$author_email>" "$(git for-each-ref --format='%(taggername) %(taggeremail)' refs/tags/v0.1.10 | sed 's/ </ </;s/> *$/>/')"
 expect 'tag: the tag is on origin' yes "$(git --git-dir="$tmp/origin.git" rev-parse -q --verify refs/tags/v0.1.10 >/dev/null && echo yes || echo no)"
 
 # Again, and after an unrelated commit: the pin already has its tag.
