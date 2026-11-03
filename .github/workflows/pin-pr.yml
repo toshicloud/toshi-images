@@ -127,6 +127,22 @@ jobs:
           install_args: --locked aqua:oras-project/oras
           cache: false
 
+      # A pin whose guest cannot agree a protocol version with the core is
+      # not opened: the image manifest's guest range must overlap the range
+      # internal/guestproto/codec.go of the checkout above declares. An image
+      # with no manifest yet is left to the next step, which waits for it.
+      - name: check the guest protocol range
+        if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          status=0
+          scripts/check-guest-protocol.sh toshi.run "ghcr.io/${REPOSITORY_IMAGES}/ubuntu-24.04:${TAG}" || status=$?
+          if [[ $status -ne 0 && $status -ne 3 ]]; then
+            exit "$status"
+          fi
+
       - name: pin the images and open the pull request
         if: steps.credential.outputs.present == 'true' && (github.event_name == 'workflow_dispatch' || env.CONCLUSION == 'success')
         env:
