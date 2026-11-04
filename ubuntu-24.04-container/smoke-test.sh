@@ -5,15 +5,15 @@
 # toolsets/versions.env, sudo for runner, and the commands and packages the
 # recipe needs. Then writes the image manifest (docs/published-images.md).
 # Usage: ubuntu-24.04-container/smoke-test.sh [image [manifest]]
-# The pins come from the env files the container reads at run time.
+# Manifest pins include the input for its recorded guest metadata.
 # shellcheck disable=SC1091,SC2153
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 
 # write_manifest IMAGE OUT reads the image's packages, users, services,
 # listening sockets and firewall inside it, as root, and assembles them on
-# the host with the pins the build used. The image carries jq, which the
-# collector reads dpkg's output with.
+# the host with the image pins and recorded guest metadata inputs. The image
+# carries jq, which the collector reads dpkg's output with.
 write_manifest() (
 	local image=$1 out=$2 tmp t
 	tmp=$(mktemp -d)
@@ -44,7 +44,7 @@ write_manifest() (
 		--out "$out" \
 		--base "$(sed -n 's/^ARG BASE=//p' "$here/Dockerfile")" \
 		--pins "$here/versions.env" "$here/../toolsets/versions.env" \
-		"$here/../ubuntu-24.04/versions.env" "$here/../railpack.env" \
+		"$here/../ubuntu-24.04/versions.env" "$here/../railpack.env" "$here/../guest.env" \
 		--toolsets "$tmp/toolsets.env" \
 		--guest-env "$here/../guest.env" \
 		--image-digest "$(docker image inspect -f '{{.Id}}' "$image")"

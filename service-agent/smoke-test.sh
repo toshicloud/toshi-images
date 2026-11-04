@@ -11,9 +11,10 @@ here=$(dirname "$(readlink -f "$0")")
 
 # write_manifest IMAGE OUT reads the image's packages, users, services,
 # listening sockets and firewall inside it, as root, and assembles them on
-# the host with the pins the build used. The image carries no jq, which the
-# collector reads dpkg's output with, so the runner's jq and the libraries it
-# links are mounted read-only; the runner and the image both run Ubuntu 24.04.
+# the host with the image pins and recorded guest metadata inputs. The image
+# carries no jq, which the collector reads dpkg's output with, so the runner's
+# jq and the libraries it links are mounted read-only; the runner and image
+# both run Ubuntu 24.04.
 write_manifest() (
 	local image=$1 out=$2 tmp lib
 	tmp=$(mktemp -d)
@@ -38,7 +39,7 @@ write_manifest() (
 		--fragment "$tmp/fragment.json" \
 		--out "$out" \
 		--base "$(sed -n 's/^BASE_IMAGE=//p' "$here/versions.env")@$(sed -n 's/^BASE_DIGEST=//p' "$here/versions.env")" \
-		--pins "$here/../toolsets/versions.env" "$here/versions.env" \
+		--pins "$here/../toolsets/versions.env" "$here/versions.env" "$here/../guest.env" \
 		--guest-env "$here/../guest.env" \
 		--image-digest "$(docker image inspect -f '{{.Id}}' "$image")"
 )

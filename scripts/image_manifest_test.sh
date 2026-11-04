@@ -103,6 +103,47 @@ original_pins=$("$script" pinset "$tmp/manifest.json")
 jq '.pins[0].value="changed"' "$tmp/manifest.json" >"$tmp/changed.json"
 expect 'pinset changes with a pin' different "$([[ $original_pins != "$("$script" pinset "$tmp/changed.json")" ]] && echo different || echo same)"
 
+# Exercise the smoke scripts' real manifest assembly without building images.
+# Docker returns a fixed collector fragment; only guest.env changes between runs.
+fixture="$tmp/smoke"
+mkdir -p "$fixture/bin"
+for input in scripts/image-manifest.sh service-agent/smoke-test.sh service-agent/versions.env \
+  ubuntu-24.04-container/smoke-test.sh ubuntu-24.04-container/versions.env ubuntu-24.04-container/Dockerfile \
+  ubuntu-24.04/versions.env toolsets/lib.sh toolsets/versions.env railpack.env; do
+  mkdir -p "$fixture/$(dirname "$input")"
+  cp "$scripts/../$input" "$fixture/$input"
+done
+printf 'gitdir: %s\n' "$(git -C "$scripts" rev-parse --absolute-git-dir)" >"$fixture/.git"
+cat >"$fixture/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case $1 in
+  run) cat "$SMOKE_MANIFEST_FRAGMENT" ;;
+  image) [[ ${2:-} == inspect ]]; echo sha256:fixture ;;
+  volume) [[ ${2:-} == create || ${2:-} == rm ]] ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$fixture/bin/docker"
+for image in service-agent ubuntu-24.04-container; do
+  previous_pins=''
+  for guest in 'v1 sha256:one' 'v2 sha256:one' 'v2 sha256:two'; do
+    read -r version guest_digest <<<"$guest"
+    printf 'TOSHI_GUEST_VERSION=%s\nTOSHI_GUEST_DIGEST=%s\n' "$version" "$guest_digest" >"$fixture/guest.env"
+    manifest="$tmp/$image-$version-${guest_digest#sha256:}.json"
+    SMOKE_MANIFEST_FRAGMENT="$tmp/fragment.json" PATH="$fixture/bin:$PATH" \
+      "$fixture/$image/smoke-test.sh" fixture "$manifest" >/dev/null
+    expect "$image guest metadata $guest" "$version,$guest_digest" \
+      "$(jq -r '[.guest.version,.guest.digest] | join(",")' "$manifest")"
+    current_pins=$("$script" pinset "$manifest")
+    if [[ -n $previous_pins ]]; then
+      expect "$image pinset changes with guest $guest" different \
+        "$([[ $previous_pins != "$current_pins" ]] && echo different || echo same)"
+    fi
+    previous_pins=$current_pins
+  done
+done
+
 # Keep systemctl, ss and nft out of PATH, while providing the required tools.
 mkdir "$tmp/collect-bin"
 for tool in bash jq awk grep mktemp rm; do ln -s "$(command -v "$tool")" "$tmp/collect-bin/$tool"; done
