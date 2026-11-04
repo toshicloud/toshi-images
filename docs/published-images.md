@@ -22,11 +22,19 @@ so it does not depend on a fixed log shard. Verification requires cosign
 timestamp against the publishing workflow's release-tag identity. Ordinary
 image signatures and SLSA provenance retain their existing signing configuration.
 
+## Releases
+
+- `v0.1.25`: incomplete release (the container and service-agent images failed
+  their manifest checks and were not published; the Ubuntu image was);
+  superseded by `v0.1.26`, which is the first version to pin.
+- `v0.1.26`: guest protocol 7.
+
 ## The image manifest
 
 Each image the workflows publish carries a manifest beside it: a JSON
-document that records what the image contains and the pins it was built
-from. It is attached to the published digest as an OCI referrer of type
+document that records what the image contains and the pins used to build it
+or assemble its manifest. It is attached to the published digest as an OCI
+referrer of type
 `application/vnd.toshi.image-manifest.v1+json`, and the same document is
 attested with cosign under the type
 `https://toshicloud.io/image-manifest/v1`.
@@ -60,14 +68,14 @@ The document holds:
 | `image` | the image kind: `ubuntu-24.04`, `ubuntu-24.04-container`, `service-agent`, `windows-2025` or `linux-pool-host` |
 | `built` | when and from which commit the build ran |
 | `base` | the base image's name and digest, when the build starts from a base pinned by digest |
-| `guest` | the guest helper the image carries: its version, its digest and the protocol range it supports (`protocol_min` and `protocol_max`, integers). The range is what the pinned `toshi-guest` prints for `version`; the `ubuntu-24.04` build reads it, and the other images, and a guest older than the one that prints a range, leave both `null` |
+| `guest` | the release's guest pin: its version and digest, and the protocol range it supports (`protocol_min` and `protocol_max`, integers) when the image carries a guest. The range is what the pinned `toshi-guest` prints for `version`; the `ubuntu-24.04` build reads it, and the other images, and a guest older than the one that prints a range, leave both `null` |
 | `packages` | every package the image has, by name and version |
 | `toolsets` | each toolset's version, as the image itself reports it |
 | `users` | local accounts, their groups, and what they can escalate to: `none`, `build-only` or `password-less` |
 | `services` | the services the image starts at boot |
 | `listening` | the TCP ports the image listens on, and the process holding each |
 | `firewall` | the firewall the image boots with |
-| `pins` | every pin in the files the build read, by file, key and resolved value |
+| `pins` | every pin in the files the build or manifest assembly read, by file, key and resolved value |
 | `image_digest` | the digest of the image file itself, where the build knows it |
 
 ### What the comparison compares
