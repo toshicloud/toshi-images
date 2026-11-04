@@ -77,7 +77,7 @@ jobs:
           client-id: ${{ secrets.TOSHI_CHAIN_APP_CLIENT_ID }}
           private-key: ${{ secrets.TOSHI_CHAIN_APP_PRIVATE_KEY }}
           owner: toshicloud
-          repositories: toshi-images
+          repositories: cloud-images
           permission-contents: write
           permission-pull-requests: write
 
