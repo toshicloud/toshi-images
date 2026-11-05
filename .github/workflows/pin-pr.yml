@@ -149,8 +149,14 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           CONTAINER_REF: ${{ vars.CONTAINER_IMAGE }}
           DRY: ${{ inputs.dry_run }}
+          PIN_GIT_NAME: ${{ vars.PIN_GIT_NAME }}
+          PIN_GIT_EMAIL: ${{ vars.PIN_GIT_EMAIL }}
         run: |
           set -euo pipefail
+          if [[ -z $PIN_GIT_NAME || -z $PIN_GIT_EMAIL ]]; then
+            echo "PIN_GIT_NAME or PIN_GIT_EMAIL is not set" >&2
+            exit 1
+          fi
           runs=$(gh api "repos/${REPOSITORY_IMAGES}/actions/runs?head_sha=${COMMIT}&per_page=100" \
             --jq '[.workflow_runs[] | select((.name == "images" or .name == "container") and .conclusion == "success")] | map("\(.name) \(.id)") | join(", ")')
           arguments=()

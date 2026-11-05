@@ -15,7 +15,9 @@
 # env: GH_TOKEN (opens the pull request; the dry run needs none),
 # CONTAINER_REF (the container image reference without a tag),
 # REPOSITORY (default toshicloud/toshi.run), RUNS (optional: the publishing
-# runs for the body, such as "images 123, container 456").
+# runs for the body, such as "images 123, container 456"), PIN_GIT_NAME and
+# PIN_GIT_EMAIL (optional, together: the commit's Git identity; otherwise the
+# existing Git configuration is used).
 
 set -euo pipefail
 
@@ -108,6 +110,15 @@ if [[ $dry_run != true ]]; then
   fi
 fi
 
+git_options=(-C "$repo")
+if [[ -n ${PIN_GIT_NAME:-} || -n ${PIN_GIT_EMAIL:-} ]]; then
+  if [[ -z ${PIN_GIT_NAME:-} || -z ${PIN_GIT_EMAIL:-} ]]; then
+    echo "PIN_GIT_NAME or PIN_GIT_EMAIL is not set" >&2
+    exit 1
+  fi
+  git_options+=(-c "user.name=$PIN_GIT_NAME" -c "user.email=$PIN_GIT_EMAIL")
+fi
+
 sed -i \
   -e "s|^TOSHI_IMAGES_RELEASE=.*|TOSHI_IMAGES_RELEASE=${tag}|" \
   -e "s|^TOSHI_IMAGES_COMMIT=.*|TOSHI_IMAGES_COMMIT=${commit}|" \
@@ -138,7 +149,7 @@ EOF
 
 git -C "$repo" switch -C "$branch" >/dev/null
 git -C "$repo" add deploy/images.env
-git -C "$repo" commit -q -m "$title"
+git "${git_options[@]}" commit -q -m "$title"
 git -C "$repo" push -q --force origin "HEAD:refs/heads/${branch}"
 gh pr create --repo "$repository" --base main --head "$branch" --title "$title" --body-file "$body"
 echo "pin-images-env: opened the pull request pinning ${tag}"
