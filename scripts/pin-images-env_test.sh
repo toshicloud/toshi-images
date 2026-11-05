@@ -106,8 +106,6 @@ publish "$next_tag" "$next_digest" "$next_sha" "$next_container"
 # The toshi.run checkout the pin lands in.
 repo="$tmp/toshi.run"
 git init -q -b main "$repo"
-git -C "$repo" config user.name test
-git -C "$repo" config user.email test@example.invalid
 mkdir -p "$repo/deploy"
 cat >"$repo/deploy/images.env" <<EOF
 # The runner images this repository tests and deploys.
@@ -119,7 +117,7 @@ UBUNTU_24_04_SHA256=${release_sha}
 TOSHI_CONTAINER_IMAGE=${container_ref}@${release_container}
 EOF
 git -C "$repo" add -A
-git -C "$repo" commit -q -m 'chore: fixture'
+git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -q -m 'chore: fixture'
 git init -q --bare "$tmp/toshi.run.git"
 git -C "$repo" remote add origin "$tmp/toshi.run.git"
 git -C "$repo" push -q origin main
@@ -129,7 +127,12 @@ value() { sed -n "s/^$1=//p" "$repo/deploy/images.env"; }
 
 run() {
   set +e
-  output=$(GH_TOKEN=test RUNS="images 123, container 456" "$script" "$@" 2>&1)
+  # Require an explicit identity rather than Git's automatically guessed one.
+  output=$(env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
+    -u EMAIL -u GIT_CONFIG_PARAMETERS GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true \
+    GH_TOKEN=test RUNS="images 123, container 456" PIN_GIT_NAME=test PIN_GIT_EMAIL=test@example.invalid \
+    "$script" "$@" 2>&1)
   rc=$?
   set -e
 }
